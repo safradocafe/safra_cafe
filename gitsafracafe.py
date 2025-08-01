@@ -1,3 +1,8 @@
+# Projeto API para previsão da safra do café
+
+# Este projeto tem o objetivo de desensolver uma geotecnologia para previsão da produtividade do café com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
+# Este trabalho É resultado de pesquisa acadêmica de Mestrado Profissional em Agricultura de Precisão do Colégio Politécnico da Universidade Federal de Santa Maria (UFSM).
+
 !pip install geemap geopandas ipyleaflet ipywidgets
 !pip install shapely
 !pip install -U geemap
