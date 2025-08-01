@@ -1631,7 +1631,6 @@ df = pd.read_csv('/content/pontos_produtividade.csv')
 pd.set_option('display.max_rows', None)
 print(df)
 
-!pip install -q pykrige
 import geopandas as gpd
 import pandas as pd
 import numpy as np
@@ -1639,12 +1638,14 @@ import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from scipy.interpolate import griddata, Rbf
 from matplotlib.path import Path
+
 try:
     from pykrige.ok import OrdinaryKriging
     KRIGING_AVAILABLE = True
 except ImportError:
     KRIGING_AVAILABLE = False
     print("Aviso: pykrige não está instalado. O método de krigagem não estará disponível.")
+
 
 # 1. Reutilizar os dados já carregados e processados
 # gdf_resultado: contém pontos com coordenadas e 'maduro_kg'
