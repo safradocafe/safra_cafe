@@ -3,16 +3,7 @@
 # Este projeto tem o objetivo de desensolver uma geotecnologia para previsão da produtividade do café com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
 # Este trabalho É resultado de pesquisa acadêmica de Mestrado Profissional em Agricultura de Precisão do Colégio Politécnico da Universidade Federal de Santa Maria (UFSM).
 
-!pip install geemap geopandas ipyleaflet ipywidgets
-!pip install shapely
-!pip install -U geemap
-!pip install SpeechRecognition
-!pip install geocoder
-!pip install geemap geopandas ipyleaflet ipywidgets shapely speechrecognition geocoder
-!pip install fiona geopandas geemap ipywidgets speechrecognition
-!pip install libgdal-dev
-!pip install fiona --no-binary fiona
-
+print("Fiona não está instalada. Instale manualmente via requirements.txt.")
 # Imports essenciais
 import os
 import json
