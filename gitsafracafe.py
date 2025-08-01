@@ -14,7 +14,7 @@ Original file is located at
 !pip install geocoder
 !pip install geemap geopandas ipyleaflet ipywidgets shapely speechrecognition geocoder
 !pip install fiona geopandas geemap ipywidgets speechrecognition
-!apt install libgdal-dev
+!pip install libgdal-dev
 !pip install fiona --no-binary fiona
 
 # Imports essenciais
