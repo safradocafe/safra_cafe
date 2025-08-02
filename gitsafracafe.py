@@ -1,8 +1,7 @@
 import ee
 import json
 import streamlit as st
-import geemap  # Para visualização de mapas
-
+import geemap
 # Configuração da página
 st.set_page_config(layout="wide")
 st.title("Google Earth Engine no Streamlit 🌍")
@@ -111,6 +110,24 @@ def get_utm_epsg(lon, lat):
     utm_zone = int((lon + 180) / 6) + 1
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
+def safe_st_folium(m, width=800, height=600):
+    """Wrapper seguro para st_folium com fallback"""
+    try:
+        from streamlit_folium import st_folium
+        return st_folium(
+            m,
+            width=width,
+            height=height,
+            returned_objects=["last_clicked"]
+        )
+    except Exception:
+        # Fallback para html direto
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
+            m.save(f.name)
+            html = open(f.name).read()
+        return st.components.v1.html(html, width=width, height=height)
+
 # Interface principal
 col1, col2 = st.columns([1, 3])
 
@@ -169,14 +186,22 @@ with col2:
     # Inicializa o mapa
     m = geemap.Map(center=[-15, -55], zoom=4)
     m.add_basemap('HYBRID')
+
+# Verificação básica (logo após criar o mapa)
+if not hasattr(m, '_id'):
+    st.error("Erro na criação do mapa Folium")
+    st.stop()  # Isso para a execução se houver erro
+
+# Adicione aqui suas camadas/geometrias ao mapa
+if st.session_state.gdf_poligono is not None:
+    m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
+    m = geemap.Map(center=[-15, -55], zoom=4)
+    m.add_basemap('HYBRID')
     
     # Adiciona áreas existentes
     if st.session_state.gdf_poligono is not None:
         m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
-    
-    if st.session_state.gdf_poligono_total is not None:
-        m.add_gdf(st.session_state.gdf_poligono_total, layer_name="Área Total", style={'color': 'green'})
-    
+            
     # Adiciona pontos existentes
     if st.session_state.gdf_pontos is not None:
         for idx, row in st.session_state.gdf_pontos.iterrows():
@@ -192,13 +217,13 @@ with col2:
             marker.add_to(m)
     
     # Exibe o mapa
-    map_output = st_folium(m, width=800, height=600)
-    
-    # Captura cliques no mapa
-    if map_output.get("last_clicked"):
+   map_output = safe_st_folium(m)  # Substitua st_folium() por safe_st_folium()
+
+# Processamento dos cliques (se necessário)
+    if map_output and map_output.get("last_clicked"):
         click_lat = map_output["last_clicked"]["lat"]
         click_lng = map_output["last_clicked"]["lng"]
-        
+               
         if st.session_state.get('inserir_manual'):
             adicionar_ponto(click_lat, click_lng, "manual")
             st.session_state.inserir_manual = False
