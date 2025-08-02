@@ -147,8 +147,7 @@ def create_map():
 import streamlit as st
 
 # Interface principal
-def main():
-    for key, default in {
+for key, default in {
     'gdf_poligono': None,
     'gdf_pontos': None,
     'gdf_poligono_total': None,
