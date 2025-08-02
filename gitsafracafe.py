@@ -3,8 +3,8 @@ import json
 import streamlit as st
 import geemap
 # Configuração da página
-st.set_page_config(layout="wide")
-st.title("Google Earth Engine no Streamlit 🌍")
+#st.set_page_config(layout="wide")
+#st.title("Google Earth Engine no Streamlit 🌍")
 
 # Inicialização do GEE com tratamento de erro
 try:
@@ -22,7 +22,7 @@ try:
             key_data=credentials_json
         )
         ee.Initialize(credentials)
-        st.success("✅ Google Earth Engine inicializado com sucesso!")
+        #st.success("✅ Google Earth Engine inicializado com sucesso!")
 
         # Exemplo: Carrega um mapa do GEE
         Map = geemap.Map(center=(40, -100), zoom=4)
@@ -63,7 +63,7 @@ st.title("Sistema de Mapeamento de Produtividade de Café")
 if not ee.data._initialized:  # Verifica o estado interno da API
     try:
         ee.Initialize()
-        st.success("✅ Google Earth Engine inicializado com sucesso!")
+        #st.success("✅ Google Earth Engine inicializado com sucesso!")
     except Exception as e:
         st.error(f"Erro ao inicializar GEE: {str(e)}")
         st.stop()
