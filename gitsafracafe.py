@@ -160,9 +160,7 @@ def main():
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
-
-
-    
+   
     st.set_page_config(layout="wide")
     st.title("Sistema de previsão avançada da produtividade do café")  
     st.markdown("""
@@ -200,8 +198,9 @@ def main():
         uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
                                        type=['gpkg', 'shp', 'kml', 'kmz'],
                                        accept_multiple_files=True)
-        if uploaded_file:
-    processar_arquivo_carregado(uploaded_file[0])
+    if uploaded_file:
+        processar_arquivo_carregado(uploaded_file[0])
+
 
         # Controles de área
         if st.button("▶️ Área Amostral"):
