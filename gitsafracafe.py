@@ -128,107 +128,135 @@ def safe_st_folium(m, width=800, height=600):
             html = open(f.name).read()
         return st.components.v1.html(html, width=width, height=height)
 
-# Interface principal
-col1, col2 = st.columns([1, 3])
-
-with col1:
-    st.header("Controles")
-    
-    # Upload de arquivos
-    uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
-                                   type=['gpkg', 'shp', 'kml', 'kmz'],
-                                   accept_multiple_files=True)
-    
-    # Controles de área
-    if st.button("▶️ Área Amostral"):
-        st.session_state.modo_desenho = 'amostral'
-        st.success("Modo desenho ativado: Área Amostral")
-    
-    if st.button("▶️ Área Total"):
-        st.session_state.modo_desenho = 'total'
-        st.success("Modo desenho ativado: Área Total")
-    
-    if st.button("🗑️ Limpar Área"):
-        st.session_state.gdf_poligono = None
-        st.session_state.gdf_poligono_total = None
-        st.session_state.gdf_pontos = None
-        st.success("Áreas limpas!")
-    
-    # Parâmetros da área
-    st.subheader("Parâmetros da Área")
-    st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0)
-    st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
-    
-    # Controles de pontos
-    if st.button("🔢 Gerar pontos automaticamente"):
-        if st.session_state.gdf_poligono is not None:
-            gerar_pontos_automaticos()
-    
-    if st.button("✏️ Inserir pontos manualmente"):
-        st.session_state.inserir_manual = True
-        st.info("Clique no mapa para adicionar pontos")
-    
-    # Produtividade
-    st.subheader("Produtividade")
-    st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
-    
-    if st.button("📝 Inserir produtividade"):
-        if st.session_state.gdf_pontos is not None:
-            inserir_produtividade()
-    
-    # Exportação
-    if st.button("💾 Exportar dados"):
-        exportar_dados()
-
-with col2:
-    st.header("Mapa Interativo")
-    
-    # Inicializa o mapa
-    m = geemap.Map(center=[-15, -55], zoom=4)
-    m.add_basemap('HYBRID')
-
-# Verificação básica (logo após criar o mapa)
-if not hasattr(m, '_id'):
-    st.error("Erro na criação do mapa Folium")
-    st.stop()  # Isso para a execução se houver erro
-
-# Adicione aqui suas camadas/geometrias ao mapa
-if st.session_state.gdf_poligono is not None:
-    m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
-    m = geemap.Map(center=[-15, -55], zoom=4)
-    m.add_basemap('HYBRID')
-    
-    # Adiciona áreas existentes
-    if st.session_state.gdf_poligono is not None:
-        m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
+def create_map():
+    try:
+        m = geemap.Map(center=[-15, -55], zoom=4)
+        
+        # Verificação de atributos essenciais
+        if not hasattr(m, '_id'):
+            st.error("Erro na criação do mapa Folium")
+            st.stop()
             
-    # Adiciona pontos existentes
-    if st.session_state.gdf_pontos is not None:
-        for idx, row in st.session_state.gdf_pontos.iterrows():
-            color = 'green' if row['coletado'] else 'orange'
-            marker = folium.CircleMarker(
-                location=[row.geometry.y, row.geometry.x],
-                radius=5,
-                color=color,
-                fill=True,
-                fill_color=color,
-                popup=f"Ponto {idx+1}"
-            )
-            marker.add_to(m)
+        # Adição de basemap com fallback
+        try:
+            m.add_basemap('HYBRID')
+        except Exception:
+            m.add_basemap('OpenStreetMap')
+            
+        return m
+    except Exception as e:
+        st.error(f"Falha crítica na criação do mapa: {str(e)}")
+        st.stop()
+
+# Função para exibição segura do mapa
+def safe_st_folium(m, width=800, height=600):
+    try:
+        return st_folium(m, width=width, height=height)
+    except Exception:
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
+            m.save(f.name)
+            return st.components.v1.html(open(f.name).read(), width=width, height=height)
+
+# Interface principal
+def main():
+    st.set_page_config(layout="wide")
+    st.title("Sistema de Mapeamento de Produtividade de Café")
     
-    # Exibe o mapa
-map_output = safe_st_folium(m)  # Substitua st_folium() por safe_st_folium()
+    # Inicialização do estado da sessão
+    if 'gdf_poligono' not in st.session_state:
+        st.session_state.gdf_poligono = None
+    if 'gdf_pontos' not in st.session_state:
+        st.session_state.gdf_pontos = None
+    if 'gdf_poligono_total' not in st.session_state:
+        st.session_state.gdf_poligono_total = None
+        
+    col1, col2 = st.columns([1, 3])
 
-# Processamento dos cliques (se necessário)
-if map_output and map_output.get("last_clicked"):
-    click_lat = map_output["last_clicked"]["lat"]
-    click_lng = map_output["last_clicked"]["lng"]
-               
-    if st.session_state.get('inserir_manual'):
-        adicionar_ponto(click_lat, click_lng, "manual")
-        st.session_state.inserir_manual = False
-        st.rerun()
+    with col1:
+        st.header("Controles")
+        
+        # Upload de arquivos
+        uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
+                                       type=['gpkg', 'shp', 'kml', 'kmz'],
+                                       accept_multiple_files=True)
+        
+        # Controles de área
+        if st.button("▶️ Área Amostral"):
+            st.session_state.modo_desenho = 'amostral'
+            st.success("Modo desenho ativado: Área Amostral")
+        
+        if st.button("▶️ Área Total"):
+            st.session_state.modo_desenho = 'total'
+            st.success("Modo desenho ativado: Área Total")
+        
+        if st.button("🗑️ Limpar Área"):
+            st.session_state.gdf_poligono = None
+            st.session_state.gdf_poligono_total = None
+            st.session_state.gdf_pontos = None
+            st.success("Áreas limpas!")
+        
+        # Parâmetros da área
+        st.subheader("Parâmetros da Área")
+        st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0)
+        st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
+        
+        # Controles de pontos
+        if st.button("🔢 Gerar pontos automaticamente"):
+            if st.session_state.gdf_poligono is not None:
+                gerar_pontos_automaticos()
+        
+        if st.button("✏️ Inserir pontos manualmente"):
+            st.session_state.inserir_manual = True
+            st.info("Clique no mapa para adicionar pontos")
+        
+        # Produtividade
+        st.subheader("Produtividade")
+        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
+        
+        if st.button("📝 Inserir produtividade"):
+            if st.session_state.gdf_pontos is not None:
+                inserir_produtividade()
+        
+        # Exportação
+        if st.button("💾 Exportar dados"):
+            exportar_dados()
 
+    with col2:
+        st.header("Mapa Interativo")
+        
+        # Criação do mapa
+        m = create_map()
+        
+        # Adiciona geometrias ao mapa
+        if st.session_state.gdf_poligono is not None:
+            m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
+        
+        if st.session_state.gdf_pontos is not None:
+            for idx, row in st.session_state.gdf_pontos.iterrows():
+                color = 'green' if row['coletado'] else 'orange'
+                folium.CircleMarker(
+                    location=[row.geometry.y, row.geometry.x],
+                    radius=5,
+                    color=color,
+                    fill=True,
+                    fill_color=color,
+                    popup=f"Ponto {idx+1}"
+                ).add_to(m)
+        
+        # Exibição do mapa
+        map_output = safe_st_folium(m, width=800, height=600)
+        
+        # Processamento de cliques
+        if map_output and map_output.get("last_clicked") and st.session_state.get('inserir_manual'):
+            click_lat = map_output["last_clicked"]["lat"]
+            click_lng = map_output["last_clicked"]["lng"]
+            adicionar_ponto(click_lat, click_lng, "manual")
+            st.session_state.inserir_manual = False
+            st.rerun()
+
+if __name__ == "__main__":
+    main()
 # Implementação das funções principais
 def processar_arquivo_carregado(uploaded_file):
     try:
