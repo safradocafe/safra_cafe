@@ -37,10 +37,19 @@ except ImportError:
     HAS_FIONA = False
     print("Fiona não está instalada. Instale manualmente via requirements.txt.")
 
-# Autenticação e inicialização do Earth Engine
+import ee
+import json
+import streamlit as st
+
 try:
-    ee.Initialize(project='agriculturadeprecisao')
+    service_account_info = json.loads(st.secrets["GEE_SERVICE_ACCOUNT_JSON"])
+    service_account_email = st.secrets["GEE_SERVICE_ACCOUNT_EMAIL"]
+
+    with open("service-account.json", "w") as f:
+        json.dump(service_account_info, f)
+
+    credentials = ee.ServiceAccountCredentials(service_account_email, "service-account.json")
+    ee.Initialize(credentials)
 except Exception as e:
-    print("Falha ao inicializar o Earth Engine. Tentando autenticar...")
-    ee.Authenticate()
-    ee.Initialize(project='agriculturadeprecisao')
+    st.error(f"Erro ao inicializar o Earth Engine: {e}")
+
