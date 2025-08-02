@@ -159,9 +159,16 @@ def safe_st_folium(m, width=800, height=600):
             return st.components.v1.html(open(f.name).read(), width=width, height=height)
 
 # Interface principal
+import streamlit as st
+
+# Interface principal
 def main():
     st.set_page_config(layout="wide")
-    st.title("Sistema de Mapeamento de Produtividade de Café")
+    st.title("Sistema de previsão avançada da produtividade do café")  
+    st.markdown("""
+        Este é um projeto de geotecnologia para previsão da produtividade do café,
+        com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
+    """)
     
     # Inicialização do estado da sessão
     if 'gdf_poligono' not in st.session_state:
