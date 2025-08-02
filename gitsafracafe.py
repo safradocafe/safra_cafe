@@ -1,4 +1,3 @@
-# IMPORTS OTIMIZADOS
 import os
 import json
 import time
@@ -16,46 +15,52 @@ from streamlit_folium import st_folium
 import folium
 from io import BytesIO
 
-# INICIALIZAÇÃO GEE
-try:
-    if "GEE_CREDENTIALS" not in st.secrets:
-        st.error("❌ Credenciais do GEE não encontradas!")
+# Inicialização do Earth Engine
+def init_gee():
+    try:
+        if "GEE_CREDENTIALS" not in st.secrets:
+            st.error("❌ Credenciais do GEE não encontradas!")
+            st.stop()
+        
+        creds = st.secrets["GEE_CREDENTIALS"]
+        credentials = ee.ServiceAccountCredentials(
+            creds["client_email"],
+            key_data=json.dumps(dict(creds))
+        )
+        ee.Initialize(credentials)
+    except Exception as e:
+        st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
         st.stop()
-    
-    creds = st.secrets["GEE_CREDENTIALS"]
-    credentials = ee.ServiceAccountCredentials(creds["client_email"], json.dumps(dict(creds)))
-    ee.Initialize(credentials)
-except Exception as e:
-    st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
-    st.stop()
 
-# CONFIGURAÇÃO INICIAL
+init_gee()
+
+# Configuração da página
 st.set_page_config(layout="wide")
-st.title("Sistema de previsão avançada da produtividade do café")  
+st.title("Sistema de previsão avançada da produtividade do café")
 st.markdown("""
     Este é um projeto de geotecnologia para previsão da produtividade do café,
     com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
 """)
 
-# ESTADO DA SESSÃO
-if 'gdf_poligono' not in st.session_state:
-    st.session_state.gdf_poligono = None
-if 'gdf_pontos' not in st.session_state:
-    st.session_state.gdf_pontos = None
-if 'gdf_poligono_total' not in st.session_state:
-    st.session_state.gdf_poligono_total = None
-if 'unidade_selecionada' not in st.session_state:
-    st.session_state.unidade_selecionada = 'kg'
-if 'densidade_plantas' not in st.session_state:
-    st.session_state.densidade_plantas = None
-if 'produtividade_media' not in st.session_state:
-    st.session_state.produtividade_media = None
-if 'modo_desenho' not in st.session_state:
-    st.session_state.modo_desenho = None
-if 'inserir_manual' not in st.session_state:
-    st.session_state.inserir_manual = False
+# Inicialização do estado da sessão
+def init_session_state():
+    defaults = {
+        'gdf_poligono': None,
+        'gdf_pontos': None,
+        'gdf_poligono_total': None,
+        'unidade_selecionada': 'kg',
+        'densidade_plantas': None,
+        'produtividade_media': None,
+        'modo_desenho': None,
+        'inserir_manual': False
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-# FUNÇÕES AUXILIARES
+init_session_state()
+
+# Funções auxiliares
 def gerar_codigo():
     letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     numeros = ''.join(random.choices(string.digits, k=2))
@@ -81,16 +86,6 @@ def get_utm_epsg(lon, lat):
     utm_zone = int((lon + 180) / 6) + 1
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
-def safe_st_folium(m, width=800, height=600):
-    try:
-        return st_folium(m, width=width, height=height, returned_objects=["last_clicked"])
-    except Exception:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
-            m.save(f.name)
-            html = open(f.name).read()
-        return st.components.v1.html(html, width=width, height=height)
-
 def create_map():
     try:
         m = geemap.Map(center=[-15, -55], zoom=4)
@@ -103,7 +98,7 @@ def create_map():
         st.error(f"Falha na criação do mapa: {str(e)}")
         st.stop()
 
-def processar_arquivo_carregado(uploaded_file):
+def processar_arquivo(uploaded_file):
     try:
         temp_file = f"./temp_{uploaded_file.name}"
         with open(temp_file, "wb") as f:
@@ -123,20 +118,12 @@ def processar_arquivo_carregado(uploaded_file):
                         gdf = gpd.read_file(kml, driver='KML')
         
         os.remove(temp_file)
-        
-        if st.session_state.modo_desenho == 'amostral':
-            st.session_state.gdf_poligono = gdf
-            st.success("Área amostral carregada!")
-        elif st.session_state.modo_desenho == 'total':
-            st.session_state.gdf_poligono_total = gdf
-            st.success("Área total carregada!")
-        
         return gdf
     except Exception as e:
         st.error(f"Erro ao processar arquivo: {str(e)}")
         return None
 
-def gerar_pontos_automaticos():
+def gerar_pontos():
     if st.session_state.gdf_poligono is None:
         st.warning("Defina a área amostral primeiro!")
         return
@@ -192,12 +179,12 @@ def adicionar_ponto(lat, lon, metodo):
     }
     
     st.session_state.gdf_pontos = gpd.GeoDataFrame(
-        pd.concat([gdf_pontos, pd.DataFrame([novo_ponto])), 
+        pd.concat([gdf_pontos, pd.DataFrame([novo_ponto])]), 
         crs="EPSG:4326"
     )
     st.success(f"Ponto {len(st.session_state.gdf_pontos)} adicionado ({metodo})")
 
-def inserir_produtividade():
+def editar_produtividade():
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.warning("Nenhum ponto disponível!")
         return
@@ -211,13 +198,24 @@ def inserir_produtividade():
                 st.write(f"Lat: {row['latitude']:.5f}")
                 st.write(f"Lon: {row['longitude']:.5f}")
             with cols[1]:
-                novo_valor = st.number_input("Valor", value=float(row['valor']), key=f"valor_{unique_key}")
+                novo_valor = st.number_input(
+                    "Valor", 
+                    value=float(row['valor']), 
+                    key=f"valor_{unique_key}"
+                )
             with cols[2]:
-                nova_unidade = st.selectbox("Unidade", ['kg', 'latas', 'litros'],
-                                          index=['kg', 'latas', 'litros'].index(row['unidade']),
-                                          key=f"unidade_{unique_key}")
+                nova_unidade = st.selectbox(
+                    "Unidade", 
+                    ['kg', 'latas', 'litros'],
+                    index=['kg', 'latas', 'litros'].index(row['unidade']),
+                    key=f"unidade_{unique_key}"
+                )
             with cols[3]:
-                coletado = st.checkbox("Coletado", value=row['coletado'], key=f"coletado_{unique_key}")
+                coletado = st.checkbox(
+                    "Coletado", 
+                    value=row['coletado'], 
+                    key=f"coletado_{unique_key}"
+                )
             
             st.session_state.gdf_pontos.at[idx, 'valor'] = novo_valor
             st.session_state.gdf_pontos.at[idx, 'unidade'] = nova_unidade
@@ -228,7 +226,7 @@ def inserir_produtividade():
             st.success("Dados atualizados!")
             st.rerun()
 
-def exportar_dados():
+def exportar():
     if st.session_state.gdf_poligono is None:
         st.warning("Nenhuma área para exportar!")
         return
@@ -265,7 +263,7 @@ def exportar_dados():
     )
     st.success("Dados preparados para exportação!")
 
-# INTERFACE PRINCIPAL
+# Interface principal
 col1, col2 = st.columns([1, 3])
 
 with col1:
@@ -279,7 +277,14 @@ with col1:
     )
 
     if uploaded_file:
-        processar_arquivo_carregado(uploaded_file)
+        gdf = processar_arquivo(uploaded_file)
+        if gdf is not None:
+            if st.session_state.modo_desenho == 'amostral':
+                st.session_state.gdf_poligono = gdf
+                st.success("Área amostral carregada!")
+            elif st.session_state.modo_desenho == 'total':
+                st.session_state.gdf_poligono_total = gdf
+                st.success("Área total carregada!")
 
     if st.button("▶️ Área Amostral", key=f"btn_amostral_{time.time_ns()}"):
         st.session_state.modo_desenho = 'amostral'
@@ -308,8 +313,7 @@ with col1:
     )
     
     if st.button("🔢 Gerar pontos automaticamente", key=f"btn_gerar_{time.time_ns()}"):
-        if st.session_state.gdf_poligono is not None:
-            gerar_pontos_automaticos()
+        gerar_pontos()
     
     if st.button("✏️ Inserir pontos manualmente", key=f"btn_manual_{time.time_ns()}"):
         st.session_state.inserir_manual = True
@@ -323,11 +327,10 @@ with col1:
     )
     
     if st.button("📝 Inserir produtividade", key=f"btn_prod_{time.time_ns()}"):
-        if st.session_state.gdf_pontos is not None:
-            inserir_produtividade()
+        editar_produtividade()
     
     if st.button("💾 Exportar dados", key=f"btn_export_{time.time_ns()}"):
-        exportar_dados()
+        exportar()
 
 with col2:
     st.header("Mapa Interativo")
@@ -348,7 +351,7 @@ with col2:
                 popup=f"Ponto {idx+1}"
             ).add_to(m)
     
-    map_output = safe_st_folium(m, width=800, height=600)
+    map_output = st_folium(m, width=800, height=600, returned_objects=["last_clicked"])
     
     if isinstance(map_output, dict) and "last_clicked" in map_output and st.session_state.get('inserir_manual'):
         click_lat = map_output["last_clicked"]["lat"]
