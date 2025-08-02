@@ -38,18 +38,19 @@ except ImportError:
     print("Fiona não está instalada. Instale manualmente via requirements.txt.")
 
 import ee
-import json
 import streamlit as st
+import json
 
+# Autenticar com os segredos do Streamlit
+SERVICE_ACCOUNT = st.secrets["GEE_SERVICE_ACCOUNT_EMAIL"]
+CREDENTIALS = json.loads(st.secrets["GEE_SERVICE_ACCOUNT_JSON"])
+credentials = ee.ServiceAccountCredentials(SERVICE_ACCOUNT, key_data=CREDENTIALS)
+
+# Inicializar GEE
 try:
-    service_account_info = json.loads(st.secrets["GEE_SERVICE_ACCOUNT_JSON"])
-    service_account_email = st.secrets["GEE_SERVICE_ACCOUNT_EMAIL"]
-
-    with open("service-account.json", "w") as f:
-        json.dump(service_account_info, f)
-
-    credentials = ee.ServiceAccountCredentials(service_account_email, "service-account.json")
     ee.Initialize(credentials)
+    st.success("Earth Engine autenticado com sucesso!")
 except Exception as e:
     st.error(f"Erro ao inicializar o Earth Engine: {e}")
+
 
