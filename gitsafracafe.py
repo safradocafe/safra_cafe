@@ -131,12 +131,7 @@ def safe_st_folium(m, width=800, height=600):
 def create_map():
     try:
         m = geemap.Map(center=[-15, -55], zoom=4)
-        
-        # Verificação de atributos essenciais
-        if not hasattr(m, '_id'):
-            st.error("Erro na criação do mapa Folium")
-            st.stop()
-            
+                        
         # Adição de basemap com fallback
         try:
             m.add_basemap('HYBRID')
