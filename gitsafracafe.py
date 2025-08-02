@@ -158,6 +158,7 @@ def main():
     'modo_desenho': None,
     'inserir_manual': False,
 }.items():
+    
     if key not in st.session_state:
         st.session_state[key] = default
 
