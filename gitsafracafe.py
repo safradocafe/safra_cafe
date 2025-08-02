@@ -131,7 +131,7 @@ def safe_st_folium(m, width=800, height=600):
 def create_map():
     try:
         m = geemap.Map(center=[-15, -55], zoom=4)
-                        
+
         # Adição de basemap com fallback
         try:
             m.add_basemap('HYBRID')
@@ -142,16 +142,6 @@ def create_map():
     except Exception as e:
         st.error(f"Falha crítica na criação do mapa: {str(e)}")
         st.stop()
-
-# Função para exibição segura do mapa
-def safe_st_folium(m, width=800, height=600):
-    try:
-        return st_folium(m, width=width, height=height)
-    except Exception:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
-            m.save(f.name)
-            return st.components.v1.html(open(f.name).read(), width=width, height=height)
 
 # Interface principal
 import streamlit as st
