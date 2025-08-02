@@ -22,7 +22,6 @@ from ipywidgets import (
 from IPython.display import display, clear_output
 from geemap import geojson_to_ee
 
-# Verificação da biblioteca Fiona
 try:
     import fiona
     from fiona import drivers
@@ -35,20 +34,10 @@ import json
 import ee
 import streamlit as st
 
-# Carrega as credenciais do segredo do Streamlit
 credentials_dict = dict(st.secrets["GEE_CREDENTIALS"])
-
-# Converte o dicionário para string JSON
 credentials_json = json.dumps(credentials_dict)
-
-# Inicializa o Earth Engine
 credentials = ee.ServiceAccountCredentials(
     email=credentials_dict["client_email"],
     key_data=credentials_json
 )
-
 ee.Initialize(credentials)
-
-
-
-
