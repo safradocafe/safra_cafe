@@ -194,9 +194,13 @@ for key, default in {
         st.header("Controles")
         
         # Upload de arquivos
-        uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
-                                       type=['gpkg', 'shp', 'kml', 'kmz'],
-                                       accept_multiple_files=True)
+    uploaded_file = st.file_uploader(
+        "Carregar arquivo (.gpkg, .shp, .kml, .kmz)",
+        type=['gpkg', 'shp', 'kml', 'kmz'],
+        accept_multiple_files=True,
+        key="upload_gpkg"
+)
+
     if uploaded_file:
         processar_arquivo_carregado(uploaded_file[0])
 
