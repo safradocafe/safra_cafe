@@ -172,9 +172,9 @@ def main():
     st.subheader("Etapas do Projeto e Aplicações Práticas")
 
     st.markdown("""
-    - **Definição da área produtiva:** Delimitação da área de interesse com arquivos geográficos e geração de pontos amostrais.
-    - **Coleta de dados:** Inserção de informações de produtividade e seleção automática de imagens de satélite com qualidade adequada.
-    - **Cálculo de indicadores vegetativos:** Análise dos principais índices espectrais para entender o estado das plantas.
+    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais.
+    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A).
+    - **Cálculo de índices espectrais: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
     - **Modelagem de produtividade:** Uso de algoritmos para prever a produção com base nos dados históricos e índices calculados.
     - **Geração de mapas interativos:** Visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
     - **Exportação de dados:** Resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
