@@ -37,18 +37,16 @@ except ImportError:
     HAS_FIONA = False
     print("Fiona não está instalada. Instale manualmente via requirements.txt.")
 
-import json
 import ee
 import streamlit as st
 
-SERVICE_ACCOUNT = "earth-engine-service@agriculturadeprecisao.iam.gserviceaccount.com"
-CREDENTIALS = json.loads(st.secrets["GEE_CREDENTIALS"])
-
+# Autenticar com chave do secrets
 credentials = ee.ServiceAccountCredentials(
-    SERVICE_ACCOUNT,
-    key_data=json.dumps(CREDENTIALS)
+    email=st.secrets["GEE_CREDENTIALS"]["client_email"],
+    key_data=dict(st.secrets["GEE_CREDENTIALS"])
 )
 ee.Initialize(credentials)
+
 
 
 
