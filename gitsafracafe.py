@@ -56,33 +56,39 @@ from io import BytesIO
 import base64
 
 # Configuração inicial
-#st.set_page_config(layout="wide")
-#st.title("Sistema de Mapeamento de Produtividade de Café")
+st.set_page_config(layout="wide")
+st.title("Sistema de previsão avançada da produtividade do café")  
+st.markdown("""
+    Este é um projeto de geotecnologia para previsão da produtividade do café,
+    com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
+""")
+st.subheader("Etapas do projeto e aplicações práticas")
 
-# Verificação segura se o GEE já foi inicializado
-#if not ee.data._initialized:  # Verifica o estado interno da API
-    #try:
-        #ee.Initialize()
-        #st.success("✅ Google Earth Engine inicializado com sucesso!")
-    #except Exception as e:
-        #st.error(f"Erro ao inicializar GEE: {str(e)}")
-        #st.stop()
-#else:
-    #st.info("ℹ️ Google Earth Engine já estava inicializado")
+st.markdown("""
+- **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais (2 pontos/hectare).
+- **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A), com 5% de nuvens.
+- **Cálculo de índices espectrais**: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
+- **Avaliação da correlação entre a produtividade e índices espectrais**: teste de Shapiro-Wilk para normalidade dos dados e correlação de Pearson (maioria normal) ou Spearman (não normal).
+- **Modelagem de produtividade:** treinamento com 11 algoritmos de machine learning, avaliação do desempenho (métricas R² e RMSE) e escolha do melhor modelo para previsão da produtividade.
+- **Geração de mapas interativos:** visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
+- **Exportação de dados:** resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
+- **Comparação entre safras:** avaliação de padrões visuais e produtivos ao longo do tempo.
+- **Análise detalhada:** identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
+""")
 
-# Variáveis de estado (substituem as variáveis globais)
-if 'gdf_poligono' not in st.session_state:
-    st.session_state.gdf_poligono = None
-if 'gdf_pontos' not in st.session_state:
-    st.session_state.gdf_pontos = None
-if 'gdf_poligono_total' not in st.session_state:
-    st.session_state.gdf_poligono_total = None
-if 'unidade_selecionada' not in st.session_state:
-    st.session_state.unidade_selecionada = 'kg'
-if 'densidade_plantas' not in st.session_state:
-    st.session_state.densidade_plantas = None
-if 'produtividade_media' not in st.session_state:
-    st.session_state.produtividade_media = None
+# Inicialização do estado da sessão
+for key, default in {
+    'gdf_poligono': None,
+    'gdf_pontos': None,
+    'gdf_poligono_total': None,
+    'unidade_selecionada': 'kg',
+    'densidade_plantas': None,
+    'produtividade_media': None,
+    'modo_desenho': None,
+    'inserir_manual': False,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # Funções auxiliares
 def gerar_codigo():
@@ -143,145 +149,6 @@ def create_map():
         st.error(f"Falha crítica na criação do mapa: {str(e)}")
         st.stop()
 
-# Interface principal
-import streamlit as st
-
-# Interface principal
-for key, default in {
-    'gdf_poligono': None,
-    'gdf_pontos': None,
-    'gdf_poligono_total': None,
-    'unidade_selecionada': 'kg',
-    'densidade_plantas': None,
-    'produtividade_media': None,
-    'modo_desenho': None,
-    'inserir_manual': False,
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-   
-    st.set_page_config(layout="wide")
-    st.title("Sistema de previsão avançada da produtividade do café")  
-    st.markdown("""
-        Este é um projeto de geotecnologia para previsão da produtividade do café,
-        com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
-    """)
-    st.subheader("Etapas do projeto e aplicações práticas")
-
-    st.markdown("""
-    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais (2 pontos/hectare).
-    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A), com 5% de nuvens.
-    - **Cálculo de índices espectrais**: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
-    - **Avaliação da correlação entre a produtividade e índices espectrais**: teste de Shapiro-Wilk para normalidade dos dados e correlação de Pearson (maioria normal) ou Spearman (não normal).
-    - **Modelagem de produtividade:** treinamento com 11 algoritmos de machine learning, avaliação do desempenho (métricas R² e RMSE) e escolha do melhor modelo para previsão da produtividade.
-    - **Geração de mapas interativos:** visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
-    - **Exportação de dados:** resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
-    - **Comparação entre safras:** avaliação de padrões visuais e produtivos ao longo do tempo.
-    - **Análise detalhada:** identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
-    """)
-    
-    # Inicialização do estado da sessão
-    if 'gdf_poligono' not in st.session_state:
-        st.session_state.gdf_poligono = None
-    if 'gdf_pontos' not in st.session_state:
-        st.session_state.gdf_pontos = None
-    if 'gdf_poligono_total' not in st.session_state:
-        st.session_state.gdf_poligono_total = None
-        
-    col1, col2 = st.columns([1, 3])
-
-    with col1:
-        st.header("Controles")
-        
-        # Upload de arquivos
-    uploaded_file = st.file_uploader(
-        "Carregar arquivo (.gpkg, .shp, .kml, .kmz)",
-        type=['gpkg', 'shp', 'kml', 'kmz'],
-        accept_multiple_files=True,
-        key="upload_gpkg"
-)
-
-    if uploaded_file:
-        processar_arquivo_carregado(uploaded_file[0])
-
-
-        # Controles de área
-        if st.button("▶️ Área Amostral"):
-            st.session_state.modo_desenho = 'amostral'
-            st.success("Modo desenho ativado: Área Amostral")
-        
-        if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
-            st.success("Modo desenho ativado: Área Total")
-        
-        if st.button("🗑️ Limpar Área"):
-            st.session_state.gdf_poligono = None
-            st.session_state.gdf_poligono_total = None
-            st.session_state.gdf_pontos = None
-            st.success("Áreas limpas!")
-        
-        # Parâmetros da área
-        st.subheader("Parâmetros da Área")
-        st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0)
-        st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
-        
-        # Controles de pontos
-        if st.button("🔢 Gerar pontos automaticamente"):
-            if st.session_state.gdf_poligono is not None:
-                gerar_pontos_automaticos()
-        
-        if st.button("✏️ Inserir pontos manualmente"):
-            st.session_state.inserir_manual = True
-            st.info("Clique no mapa para adicionar pontos")
-        
-        # Produtividade
-        st.subheader("Produtividade")
-        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
-        
-        if st.button("📝 Inserir produtividade"):
-            if st.session_state.gdf_pontos is not None:
-                inserir_produtividade()
-        
-        # Exportação
-        if st.button("💾 Exportar dados"):
-            exportar_dados()
-
-    with col2:
-        st.header("Mapa Interativo")
-        
-        # Criação do mapa
-        m = create_map()
-        
-        # Adiciona geometrias ao mapa
-        if st.session_state.gdf_poligono is not None:
-            m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
-        
-        if st.session_state.gdf_pontos is not None:
-            for idx, row in st.session_state.gdf_pontos.iterrows():
-                color = 'green' if row['coletado'] else 'orange'
-                folium.CircleMarker(
-                    location=[row.geometry.y, row.geometry.x],
-                    radius=5,
-                    color=color,
-                    fill=True,
-                    fill_color=color,
-                    popup=f"Ponto {idx+1}"
-                ).add_to(m)
-        
-        # Exibição do mapa
-        map_output = safe_st_folium(m, width=800, height=600)
-        
-        # Processamento de cliques
-        if isinstance(map_output, dict) and "last_clicked" in map_output and st.session_state.get('inserir_manual'):
-            click_lat = map_output["last_clicked"]["lat"]
-            click_lng = map_output["last_clicked"]["lng"]
-            adicionar_ponto(click_lat, click_lng, "manual")
-            st.session_state.inserir_manual = False
-            st.rerun()
-
-if __name__ == "__main__":
-    main()
-# Implementação das funções principais
 def processar_arquivo_carregado(uploaded_file):
     try:
         # Cria um arquivo temporário
@@ -376,7 +243,7 @@ def adicionar_ponto(lat, lon, metodo):
     }
     
     st.session_state.gdf_pontos = gpd.GeoDataFrame(
-        pd.concat([gdf_pontos, pd.DataFrame([novo_ponto])]), 
+        pd.concat([gdf_pontos, pd.DataFrame([novo_ponto])), 
         crs="EPSG:4326"
     )
     st.success(f"Ponto {len(st.session_state.gdf_pontos)} adicionado ({metodo})")
@@ -463,3 +330,94 @@ def exportar_dados():
         mime="application/zip"
     )
     st.success("Dados preparados para exportação!")
+
+# Interface principal
+col1, col2 = st.columns([1, 3])
+
+with col1:
+    st.header("Controles")
+    
+    # Upload de arquivos
+    uploaded_file = st.file_uploader(
+        "Carregar arquivo (.gpkg, .shp, .kml, .kmz)",
+        type=['gpkg', 'shp', 'kml', 'kmz'],
+        accept_multiple_files=False,
+        key="upload_gpkg_unique"  # Chave única para evitar duplicação
+    )
+
+    if uploaded_file:
+        processar_arquivo_carregado(uploaded_file)
+
+    # Controles de área
+    if st.button("▶️ Área Amostral", key="btn_amostral"):
+        st.session_state.modo_desenho = 'amostral'
+        st.success("Modo desenho ativado: Área Amostral")
+    
+    if st.button("▶️ Área Total", key="btn_total"):
+        st.session_state.modo_desenho = 'total'
+        st.success("Modo desenho ativado: Área Total")
+    
+    if st.button("🗑️ Limpar Área", key="btn_limpar"):
+        st.session_state.gdf_poligono = None
+        st.session_state.gdf_poligono_total = None
+        st.session_state.gdf_pontos = None
+        st.success("Áreas limpas!")
+    
+    # Parâmetros da área
+    st.subheader("Parâmetros da Área")
+    st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0, key="densidade_input")
+    st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0, key="produtividade_input")
+    
+    # Controles de pontos
+    if st.button("🔢 Gerar pontos automaticamente", key="btn_gerar_pontos"):
+        if st.session_state.gdf_poligono is not None:
+            gerar_pontos_automaticos()
+    
+    if st.button("✏️ Inserir pontos manualmente", key="btn_inserir_manual"):
+        st.session_state.inserir_manual = True
+        st.info("Clique no mapa para adicionar pontos")
+    
+    # Produtividade
+    st.subheader("Produtividade")
+    st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'], key="unidade_select")
+    
+    if st.button("📝 Inserir produtividade", key="btn_inserir_prod"):
+        if st.session_state.gdf_pontos is not None:
+            inserir_produtividade()
+    
+    # Exportação
+    if st.button("💾 Exportar dados", key="btn_exportar"):
+        exportar_dados()
+
+with col2:
+    st.header("Mapa Interativo")
+    
+    # Criação do mapa
+    m = create_map()
+    
+    # Adiciona geometrias ao mapa
+    if st.session_state.gdf_poligono is not None:
+        m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
+    
+    if st.session_state.gdf_pontos is not None:
+        for idx, row in st.session_state.gdf_pontos.iterrows():
+            color = 'green' if row['coletado'] else 'orange'
+            folium.CircleMarker(
+                location=[row.geometry.y, row.geometry.x],
+                radius=5,
+                color=color,
+                fill=True,
+                fill_color=color,
+                popup=f"Ponto {idx+1}"
+            ).add_to(m)
+    
+    # Exibição do mapa
+    map_output = safe_st_folium(m, width=800, height=600)
+    
+    # Processamento de cliques
+    if isinstance(map_output, dict) and "last_clicked" in map_output and st.session_state.get('inserir_manual'):
+        click_lat = map_output["last_clicked"]["lat"]
+        click_lng = map_output["last_clicked"]["lng"]
+        adicionar_ponto(click_lat, click_lng, "manual")
+        st.session_state.inserir_manual = False
+        st.rerun()
