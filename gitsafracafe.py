@@ -56,19 +56,19 @@ from io import BytesIO
 import base64
 
 # Configuração inicial
-st.set_page_config(layout="wide")
-st.title("Sistema de Mapeamento de Produtividade de Café")
+#st.set_page_config(layout="wide")
+#st.title("Sistema de Mapeamento de Produtividade de Café")
 
 # Verificação segura se o GEE já foi inicializado
-if not ee.data._initialized:  # Verifica o estado interno da API
-    try:
-        ee.Initialize()
+#if not ee.data._initialized:  # Verifica o estado interno da API
+    #try:
+        #ee.Initialize()
         #st.success("✅ Google Earth Engine inicializado com sucesso!")
-    except Exception as e:
-        st.error(f"Erro ao inicializar GEE: {str(e)}")
-        st.stop()
-else:
-    st.info("ℹ️ Google Earth Engine já estava inicializado")
+    #except Exception as e:
+        #st.error(f"Erro ao inicializar GEE: {str(e)}")
+        #st.stop()
+#else:
+    #st.info("ℹ️ Google Earth Engine já estava inicializado")
 
 # Variáveis de estado (substituem as variáveis globais)
 if 'gdf_poligono' not in st.session_state:
