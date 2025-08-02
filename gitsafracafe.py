@@ -169,6 +169,18 @@ def main():
         Este é um projeto de geotecnologia para previsão da produtividade do café,
         com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
     """)
+    st.subheader("Etapas do Projeto e Aplicações Práticas")
+
+    st.markdown("""
+    - **Definição da área produtiva:** Delimitação da área de interesse com arquivos geográficos e geração de pontos amostrais.
+    - **Coleta de dados:** Inserção de informações de produtividade e seleção automática de imagens de satélite com qualidade adequada.
+    - **Cálculo de indicadores vegetativos:** Análise dos principais índices espectrais para entender o estado das plantas.
+    - **Modelagem de produtividade:** Uso de algoritmos para prever a produção com base nos dados históricos e índices calculados.
+    - **Geração de mapas interativos:** Visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
+    - **Exportação de dados:** Resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
+    - **Comparação entre safras:** Avaliação de padrões visuais e produtivos ao longo do tempo.
+    - **Análise detalhada:** Identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
+    """)
     
     # Inicialização do estado da sessão
     if 'gdf_poligono' not in st.session_state:
