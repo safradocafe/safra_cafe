@@ -268,7 +268,7 @@ for key, default in {
         map_output = safe_st_folium(m, width=800, height=600)
         
         # Processamento de cliques
-        if map_output and map_output.get("last_clicked") and st.session_state.get('inserir_manual'):
+        if isinstance(map_output, dict) and "last_clicked" in map_output and st.session_state.get('inserir_manual'):
             click_lat = map_output["last_clicked"]["lat"]
             click_lng = map_output["last_clicked"]["lng"]
             adicionar_ponto(click_lat, click_lng, "manual")
