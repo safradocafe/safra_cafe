@@ -172,14 +172,15 @@ def main():
     st.subheader("Etapas do Projeto e Aplicações Práticas")
 
     st.markdown("""
-    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais.
-    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A).
-    - **Cálculo de índices espectrais: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
-    - **Modelagem de produtividade:** Uso de algoritmos para prever a produção com base nos dados históricos e índices calculados.
-    - **Geração de mapas interativos:** Visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
-    - **Exportação de dados:** Resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
-    - **Comparação entre safras:** Avaliação de padrões visuais e produtivos ao longo do tempo.
-    - **Análise detalhada:** Identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
+    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais (2 pontos/hectare).
+    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A), com 5% de nuvens.
+    - **Cálculo de índices espectrais**: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
+    - **Avaliação da correlação entre a produtividade e índices espectrais**: teste de Shapiro-Wilk para normalidade dos dados e correlação de Pearson (maioria normal) ou Spearman (não normal).
+    - **Modelagem de produtividade:** treinamento com 11 algoritmos de machine learning, avaliação do desempenho (métricas R² e RMSE) e escolha do melhor modelo para previsão da produtividade.
+    - **Geração de mapas interativos:** visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
+    - **Exportação de dados:** resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
+    - **Comparação entre safras:** avaliação de padrões visuais e produtivos ao longo do tempo.
+    - **Análise detalhada:** identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
     """)
     
     # Inicialização do estado da sessão
