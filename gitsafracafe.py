@@ -220,14 +220,14 @@ if st.session_state.gdf_poligono is not None:
 map_output = safe_st_folium(m)  # Substitua st_folium() por safe_st_folium()
 
 # Processamento dos cliques (se necessário)
-    if map_output and map_output.get("last_clicked"):
-        click_lat = map_output["last_clicked"]["lat"]
-        click_lng = map_output["last_clicked"]["lng"]
+if map_output and map_output.get("last_clicked"):
+    click_lat = map_output["last_clicked"]["lat"]
+    click_lng = map_output["last_clicked"]["lng"]
                
-        if st.session_state.get('inserir_manual'):
-            adicionar_ponto(click_lat, click_lng, "manual")
-            st.session_state.inserir_manual = False
-            st.rerun()
+    if st.session_state.get('inserir_manual'):
+        adicionar_ponto(click_lat, click_lng, "manual")
+        st.session_state.inserir_manual = False
+        st.rerun()
 
 # Implementação das funções principais
 def processar_arquivo_carregado(uploaded_file):
