@@ -12,3 +12,6 @@ pandas
 earthengine-api
 ipython
 ipyfilechooser
+streamlit-folium
+geemap
+folium
