@@ -217,7 +217,7 @@ if st.session_state.gdf_poligono is not None:
             marker.add_to(m)
     
     # Exibe o mapa
-   map_output = safe_st_folium(m)  # Substitua st_folium() por safe_st_folium()
+map_output = safe_st_folium(m)  # Substitua st_folium() por safe_st_folium()
 
 # Processamento dos cliques (se necessário)
     if map_output and map_output.get("last_clicked"):
