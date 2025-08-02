@@ -1,41 +1,4 @@
-import ee
-import json
-import streamlit as st
-import geemap
-# Configuração da página
-#st.set_page_config(layout="wide")
-#st.title("Google Earth Engine no Streamlit 🌍")
-
-# Inicialização do GEE com tratamento de erro
-try:
-    # Verifica se as credenciais existem
-    if "GEE_CREDENTIALS" not in st.secrets:
-        st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
-    else:
-        # Carrega as credenciais
-        credentials_dict = dict(st.secrets["GEE_CREDENTIALS"])
-        credentials_json = json.dumps(credentials_dict)
-
-        # Inicializa o GEE
-        credentials = ee.ServiceAccountCredentials(
-            email=credentials_dict["client_email"],
-            key_data=credentials_json
-        )
-        ee.Initialize(credentials)
-        #st.success("✅ Google Earth Engine inicializado com sucesso!")
-
-        # Exemplo: Carrega um mapa do GEE
-        Map = geemap.Map(center=(40, -100), zoom=4)
-        Map.add_basemap("SATELLITE")  # Adiciona imagem de satélite
-        Map.to_streamlit()  # Renderiza o mapa no Streamlit
-
-except Exception as e:
-    st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
-
-################################
-# INICIAR GERAÇÃO DO MAPA
-################################
-
+# IMPORTS OTIMIZADOS
 import os
 import json
 import time
@@ -48,12 +11,31 @@ import geemap
 import ee
 import geopandas as gpd
 import streamlit as st
-from shapely.geometry import Point, mapping, shape
-from fiona.drvsupport import supported_drivers
+from shapely.geometry import Point
 from streamlit_folium import st_folium
 import folium
 from io import BytesIO
-import base64
+
+
+# INICIALIZAÇÃO GEE SIMPLIFICADA
+try:
+    if "GEE_CREDENTIALS" not in st.secrets:
+        st.error("❌ Credenciais do GEE não encontradas!")
+        st.stop()
+    
+    creds = st.secrets["GEE_CREDENTIALS"]
+    credentials = ee.ServiceAccountCredentials(creds["client_email"], json.dumps(dict(creds)))
+    ee.Initialize(credentials)
+except Exception as e:
+    st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
+    st.stop()
+        
+except Exception as e:
+    st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
+
+################################
+# INICIAR GERAÇÃO DO MAPA
+################################
 
 # Configuração inicial
 st.set_page_config(layout="wide")
@@ -187,7 +169,7 @@ def processar_arquivo_carregado(uploaded_file):
         return None
 
 def gerar_pontos_automaticos():
-    if st.session_state.gdf_poligono is None:
+    if st.session_state.gdf_poligono is None:  
         st.warning("Defina a área amostral primeiro!")
         return
     
@@ -335,7 +317,7 @@ def exportar_dados():
 col1, col2 = st.columns([1, 3])
 
 with col1:
-    st.header("Controles")
+    uploaded_file = st.file_uploader(..., key=f"uploader_{time.time_ns()}")
     
     # Upload de arquivos
     uploaded_file = st.file_uploader(
@@ -390,7 +372,7 @@ with col1:
         exportar_dados()
 
 with col2:
-    st.header("Mapa Interativo")
+    m = create_map()
     
     # Criação do mapa
     m = create_map()
