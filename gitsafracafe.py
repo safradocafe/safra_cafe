@@ -3,7 +3,7 @@ import streamlit as st
 import geemap
 import ee 
 # Configuração da página
-#st.set_page_config(layout="wide")
+st.set_page_config(layout="wide")
 #st.title("Google Earth Engine no Streamlit 🌍")
 
 # Inicialização do GEE com tratamento de erro
@@ -156,7 +156,6 @@ def create_map():
 
 
 def main():
-    st.set_page_config(layout="wide")
     st.title("Sistema de previsão avançada da produtividade do café")  
     st.markdown("""
         Este é um projeto de geotecnologia para previsão da produtividade do café,
