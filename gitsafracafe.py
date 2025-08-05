@@ -166,25 +166,6 @@ def create_map():
         }
     )
 
-
-with col2:
-    st.header("Mapa Interativo")
-    
-    # Cria e exibe o mapa Pydeck
-    deck = create_map()
-    st.pydeck_chart(deck)
-    
-    # Tratamento de cliques para adição manual de pontos
-    if deck.last_clicked and st.session_state.get('inserir_manual'):
-        click_data = deck.last_clicked
-        if isinstance(click_data, dict) and 'latitude' in click_data and 'longitude' in click_data:
-            adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
-            st.session_state.inserir_manual = False
-            st.rerun()
-        
-# Interface principal
-import streamlit as st
-
 # Interface principal
 def main():
     st.set_page_config(layout="wide")
@@ -269,8 +250,8 @@ def main():
     with col2:
         st.header("Mapa Interativo")
         
-    # Cria e exibe o mapa Pydeck
-    deck = create_map()
+        # Cria e exibe o mapa Pydeck
+        deck = create_map()
         st.pydeck_chart(deck)
         
         # Tratamento de cliques para adição manual de pontos
@@ -280,17 +261,10 @@ def main():
                 adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
                 st.session_state.inserir_manual = False
                 st.rerun()
-              
-        # Processamento de cliques
-        if map_output and map_output.get("last_clicked") and st.session_state.get('inserir_manual'):
-            click_lat = map_output["last_clicked"]["lat"]
-            click_lng = map_output["last_clicked"]["lng"]
-            adicionar_ponto(click_lat, click_lng, "manual")
-            st.session_state.inserir_manual = False
-            st.rerun()
 
 if __name__ == "__main__":
     main()
+
 # Implementação das funções principais
 def processar_arquivo_carregado(uploaded_file):
     try:
