@@ -247,13 +247,15 @@ def main():
         if st.button("💾 Exportar dados"):
             exportar_dados()
 
-    with col2:
-        st.header("Mapa Interativo")
-        
-        # Cria e exibe o mapa Pydeck
-        deck = create_map()
-        st.pydeck_chart(deck)
-        
+with col2:
+    st.header("Mapa Interativo")
+    
+    # Cria e exibe o mapa Pydeck
+    deck = create_map()
+    st.pydeck_chart(deck)
+    
+    # Verifica se o mapa foi criado corretamente antes de acessar last_clicked
+    if hasattr(deck, 'last_clicked'):
         # Tratamento de cliques para adição manual de pontos
         if deck.last_clicked and st.session_state.get('inserir_manual'):
             click_data = deck.last_clicked
