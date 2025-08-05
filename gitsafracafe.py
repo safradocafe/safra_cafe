@@ -68,6 +68,105 @@ import base64
 #else:
     #st.info("ℹ️ Google Earth Engine já estava inicializado")
 
+def main():
+    st.set_page_config(layout="wide")
+    st.title("Sistema de previsão avançada da produtividade do café")  
+    st.markdown("""
+        Este é um projeto de geotecnologia para previsão da produtividade do café,
+        com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
+    """)
+    st.subheader("Etapas do projeto e aplicações práticas")
+
+    st.markdown("""
+    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais (2 pontos/hectare).
+    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A), com 5% de nuvens.
+    - **Cálculo de índices espectrais**: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
+    - **Avaliação da correlação entre a produtividade e índices espectrais**: teste de Shapiro-Wilk para normalidade dos dados e correlação de Pearson (maioria normal) ou Spearman (não normal).
+    - **Modelagem de produtividade:** treinamento com 11 algoritmos de machine learning, avaliação do desempenho (métricas R² e RMSE) e escolha do melhor modelo para previsão da produtividade.
+    - **Geração de mapas interativos:** visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
+    - **Exportação de dados:** resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
+    - **Comparação entre safras:** avaliação de padrões visuais e produtivos ao longo do tempo.
+    - **Análise detalhada:** identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
+    """)
+    
+    # Inicialização do estado da sessão
+    if 'gdf_poligono' not in st.session_state:
+        st.session_state.gdf_poligono = None
+    if 'gdf_pontos' not in st.session_state:
+        st.session_state.gdf_pontos = None
+    if 'gdf_poligono_total' not in st.session_state:
+        st.session_state.gdf_poligono_total = None
+        
+    col1, col2 = st.columns([1, 3])
+
+    with col1:
+        st.header("Controles")    
+
+        uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
+                                       type=['gpkg', 'shp', 'kml', 'kmz'],
+                                       accept_multiple_files=True)
+        
+        # Controles de área
+        if st.button("▶️ Área Amostral"):
+            st.session_state.modo_desenho = 'amostral'
+            st.success("Modo desenho ativado: Área Amostral")
+        
+        if st.button("▶️ Área Total"):
+            st.session_state.modo_desenho = 'total'
+            st.success("Modo desenho ativado: Área Total")
+        
+        if st.button("🗑️ Limpar Área"):
+            st.session_state.gdf_poligono = None
+            st.session_state.gdf_poligono_total = None
+            st.session_state.gdf_pontos = None
+            st.success("Áreas limpas!")
+        
+        # Parâmetros da área
+        st.subheader("Parâmetros da Área")
+        st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0)
+        st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
+        
+        # Controles de pontos
+        if st.button("🔢 Gerar pontos automaticamente"):
+            if st.session_state.gdf_poligono is not None:
+                gerar_pontos_automaticos()
+        
+        if st.button("✏️ Inserir pontos manualmente"):
+            st.session_state.inserir_manual = True
+            st.info("Clique no mapa para adicionar pontos")
+        
+        # Produtividade
+        st.subheader("Produtividade")
+        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
+        
+        if st.button("📝 Inserir produtividade"):
+            if st.session_state.gdf_pontos is not None:
+                inserir_produtividade()
+        
+        # Exportação
+        if st.button("💾 Exportar dados"):
+            exportar_dados()
+
+with col2:
+        st.header("Mapa Interativo")
+        
+        # Cria e exibe o mapa Pydeck
+        deck = create_map()
+        st.pydeck_chart(deck)
+        
+        # Verifica se o mapa foi criado corretamente antes de acessar last_clicked
+        if hasattr(deck, 'last_clicked'):
+            # Tratamento de cliques para adição manual de pontos
+            if deck.last_clicked and st.session_state.get('inserir_manual'):
+                click_data = deck.last_clicked
+                if isinstance(click_data, dict) and 'latitude' in click_data and 'longitude' in click_data:
+                    adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
+                    st.session_state.inserir_manual = False
+                    st.rerun()
+
+if __name__ == "__main__":
+    main()
+
 # Variáveis de estado (substituem as variáveis globais)
 if 'gdf_poligono' not in st.session_state:
     st.session_state.gdf_poligono = None
@@ -127,10 +226,8 @@ def create_map():
     
     # Adiciona pontos se existirem
     if st.session_state.gdf_pontos is not None:
-        # Converte para formato que o Pydeck pode usar
         points_df = st.session_state.gdf_pontos[['longitude', 'latitude', 'coletado', 'Code', 'valor', 'unidade']].copy()
-        points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])
-        
+        points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])      
         point_layer = pdk.Layer(
             "ScatterplotLayer",
             data=points_df,
@@ -165,107 +262,6 @@ def create_map():
             }
         }
     )
-
-# Interface principal
-def main():
-    st.set_page_config(layout="wide")
-    st.title("Sistema de previsão avançada da produtividade do café")  
-    st.markdown("""
-        Este é um projeto de geotecnologia para previsão da produtividade do café,
-        com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
-    """)
-    st.subheader("Etapas do projeto e aplicações práticas")
-
-    st.markdown("""
-    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais (2 pontos/hectare).
-    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A), com 5% de nuvens.
-    - **Cálculo de índices espectrais**: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
-    - **Avaliação da correlação entre a produtividade e índices espectrais**: teste de Shapiro-Wilk para normalidade dos dados e correlação de Pearson (maioria normal) ou Spearman (não normal).
-    - **Modelagem de produtividade:** treinamento com 11 algoritmos de machine learning, avaliação do desempenho (métricas R² e RMSE) e escolha do melhor modelo para previsão da produtividade.
-    - **Geração de mapas interativos:** visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
-    - **Exportação de dados:** resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
-    - **Comparação entre safras:** avaliação de padrões visuais e produtivos ao longo do tempo.
-    - **Análise detalhada:** identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
-    """)
-    
-    # Inicialização do estado da sessão
-    if 'gdf_poligono' not in st.session_state:
-        st.session_state.gdf_poligono = None
-    if 'gdf_pontos' not in st.session_state:
-        st.session_state.gdf_pontos = None
-    if 'gdf_poligono_total' not in st.session_state:
-        st.session_state.gdf_poligono_total = None
-        
-    col1, col2 = st.columns([1, 3])
-
-    with col1:
-        st.header("Controles")
-        
-        # Upload de arquivos
-        uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
-                                       type=['gpkg', 'shp', 'kml', 'kmz'],
-                                       accept_multiple_files=True)
-        
-        # Controles de área
-        if st.button("▶️ Área Amostral"):
-            st.session_state.modo_desenho = 'amostral'
-            st.success("Modo desenho ativado: Área Amostral")
-        
-        if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
-            st.success("Modo desenho ativado: Área Total")
-        
-        if st.button("🗑️ Limpar Área"):
-            st.session_state.gdf_poligono = None
-            st.session_state.gdf_poligono_total = None
-            st.session_state.gdf_pontos = None
-            st.success("Áreas limpas!")
-        
-        # Parâmetros da área
-        st.subheader("Parâmetros da Área")
-        st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0)
-        st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
-        
-        # Controles de pontos
-        if st.button("🔢 Gerar pontos automaticamente"):
-            if st.session_state.gdf_poligono is not None:
-                gerar_pontos_automaticos()
-        
-        if st.button("✏️ Inserir pontos manualmente"):
-            st.session_state.inserir_manual = True
-            st.info("Clique no mapa para adicionar pontos")
-        
-        # Produtividade
-        st.subheader("Produtividade")
-        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
-        
-        if st.button("📝 Inserir produtividade"):
-            if st.session_state.gdf_pontos is not None:
-                inserir_produtividade()
-        
-        # Exportação
-        if st.button("💾 Exportar dados"):
-            exportar_dados()
-
-with col2:
-    st.header("Mapa Interativo")
-    
-    # Cria e exibe o mapa Pydeck
-    deck = create_map()
-    st.pydeck_chart(deck)
-    
-    # Verifica se o mapa foi criado corretamente antes de acessar last_clicked
-    if hasattr(deck, 'last_clicked'):
-        # Tratamento de cliques para adição manual de pontos
-        if deck.last_clicked and st.session_state.get('inserir_manual'):
-            click_data = deck.last_clicked
-            if isinstance(click_data, dict) and 'latitude' in click_data and 'longitude' in click_data:
-                adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
-                st.session_state.inserir_manual = False
-                st.rerun()
-
-if __name__ == "__main__":
-    main()
 
 # Implementação das funções principais
 def processar_arquivo_carregado(uploaded_file):
