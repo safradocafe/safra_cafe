@@ -206,19 +206,19 @@ def main():
 if uploaded_file:
     processar_arquivo_carregado(uploaded_file[0])        
           
-        if st.button("▶️ Área Amostral"):
-            st.session_state.modo_desenho = 'amostral'
-            st.success("Modo desenho ativado: Área Amostral")
+    if st.button("▶️ Área Amostral"):
+        st.session_state.modo_desenho = 'amostral'
+        st.success("Modo desenho ativado: Área Amostral")
         
-        if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
-            st.success("Modo desenho ativado: Área Total")
+    if st.button("▶️ Área Total"):
+        st.session_state.modo_desenho = 'total'
+        st.success("Modo desenho ativado: Área Total")
         
-        if st.button("🗑️ Limpar Área"):
-            st.session_state.gdf_poligono = None
-            st.session_state.gdf_poligono_total = None
-            st.session_state.gdf_pontos = None
-            st.success("Áreas limpas!")
+    if st.button("🗑️ Limpar Área"):
+        st.session_state.gdf_poligono = None
+        st.session_state.gdf_poligono_total = None
+        st.session_state.gdf_pontos = None
+        st.success("Áreas limpas!")
         
         # Parâmetros da área
         st.subheader("Parâmetros da Área")
@@ -226,25 +226,25 @@ if uploaded_file:
         st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
         
         # Controles de pontos
-        if st.button("🔢 Gerar pontos automaticamente"):
-            if st.session_state.gdf_poligono is not None:
-                gerar_pontos_automaticos()
+    if st.button("🔢 Gerar pontos automaticamente"):
+        if st.session_state.gdf_poligono is not None:
+            gerar_pontos_automaticos()
         
-        if st.button("✏️ Inserir pontos manualmente"):
-            st.session_state.inserir_manual = True
-            st.info("Clique no mapa para adicionar pontos")
+    if st.button("✏️ Inserir pontos manualmente"):
+        st.session_state.inserir_manual = True
+        st.info("Clique no mapa para adicionar pontos")
         
         # Produtividade
         st.subheader("Produtividade")
         st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
         
-        if st.button("📝 Inserir produtividade"):
-            if st.session_state.gdf_pontos is not None:
-                inserir_produtividade()
+    if st.button("📝 Inserir produtividade"):
+        if st.session_state.gdf_pontos is not None:
+            inserir_produtividade()
         
         # Exportação
-        if st.button("💾 Exportar dados"):
-            exportar_dados()
+    if st.button("💾 Exportar dados"):
+        exportar_dados()
 
     with col2:
         st.header("Mapa Interativo")
