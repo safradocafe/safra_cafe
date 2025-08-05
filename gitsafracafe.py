@@ -449,4 +449,4 @@ def exportar_dados():
 
 # Processa arquivos carregados
 if uploaded_file:
-    processar_arquivo_carregado(uploaded_file[0])  # Pega o primeiro arquivo se múltiplos
+    processar_arquivo_carregado(uploaded_file[0])
