@@ -111,8 +111,8 @@ def get_utm_epsg(lon, lat):
 def create_map():
     """Cria um mapa Pydeck com as camadas necessárias"""
     layers = []
-
-        # Adiciona polígono se existir
+    
+    # Adiciona polígono se existir
     if st.session_state.gdf_poligono is not None:
         polygon_layer = pdk.Layer(
             "PolygonLayer",
@@ -128,8 +128,8 @@ def create_map():
     # Adiciona pontos se existirem
     if st.session_state.gdf_pontos is not None:
         # Converte para formato que o Pydeck pode usar
-        points_df = st.session_state.gdf_pontos[['longitude', 'latitude', 'coletado']].copy()
-    points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])
+        points_df = st.session_state.gdf_pontos[['longitude', 'latitude', 'coletado', 'Code', 'valor', 'unidade']].copy()
+        points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])
         
         point_layer = pdk.Layer(
             "ScatterplotLayer",
@@ -154,16 +154,33 @@ def create_map():
         initial_view_state=view_state,
         map_style="mapbox://styles/mapbox/satellite-v9",
         tooltip={
-    "html": """
-        <b>Ponto:</b> {Code}<br/>
-        <b>Produtividade:</b> {valor} {unidade}<br/>
-        <b>Coletado:</b> {coletado}
-    """,
-    "style": {
-        "backgroundColor": "steelblue",
-        "color": "white"
-    }
-}
+            "html": """
+                <b>Ponto:</b> {Code}<br/>
+                <b>Produtividade:</b> {valor} {unidade}<br/>
+                <b>Coletado:</b> {coletado}
+            """,
+            "style": {
+                "backgroundColor": "steelblue",
+                "color": "white"
+            }
+        }
+    )
+
+
+with col2:
+    st.header("Mapa Interativo")
+    
+    # Cria e exibe o mapa Pydeck
+    deck = create_map()
+    st.pydeck_chart(deck)
+    
+    # Tratamento de cliques para adição manual de pontos
+    if deck.last_clicked and st.session_state.get('inserir_manual'):
+        click_data = deck.last_clicked
+        if isinstance(click_data, dict) and 'latitude' in click_data and 'longitude' in click_data:
+            adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
+            st.session_state.inserir_manual = False
+            st.rerun()
         
 # Interface principal
 import streamlit as st
@@ -249,11 +266,11 @@ def main():
         if st.button("💾 Exportar dados"):
             exportar_dados()
 
-        with col2:
+    with col2:
         st.header("Mapa Interativo")
         
-        # Cria e exibe o mapa Pydeck
-        deck = create_map()
+    # Cria e exibe o mapa Pydeck
+    deck = create_map()
         st.pydeck_chart(deck)
         
         # Tratamento de cliques para adição manual de pontos
@@ -263,10 +280,7 @@ def main():
                 adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
                 st.session_state.inserir_manual = False
                 st.rerun()
-        
-        # Exibição do mapa
-        map_output = safe_st_folium(m, width=800, height=600)
-        
+              
         # Processamento de cliques
         if map_output and map_output.get("last_clicked") and st.session_state.get('inserir_manual'):
             click_lat = map_output["last_clicked"]["lat"]
