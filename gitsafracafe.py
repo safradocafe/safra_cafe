@@ -147,16 +147,6 @@ def create_map():
         st.error(f"Falha crítica na criação do mapa: {str(e)}")
         st.stop()
 
-# Função para exibição segura do mapa
-def safe_st_folium(m, width=600, height=400):
-    try:
-        return st_folium(m, width=width, height=height)
-    except Exception:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
-            m.save(f.name)
-            return st.components.v1.html(open(f.name).read(), width=width, height=height)
-
 # Interface principal
 import streamlit as st
 
