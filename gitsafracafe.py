@@ -119,14 +119,7 @@ def safe_st_folium(m, width=800, height=600):
             height=height,
             returned_objects=["last_clicked"]
         )
-    except Exception:
-        # Fallback para html direto
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
-            m.save(f.name)
-            html = open(f.name).read()
-        return st.components.v1.html(html, width=width, height=height)
-
+   
 def create_map():
     try:
         m = geemap.Map(center=[-15, -55], zoom=4)
