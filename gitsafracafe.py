@@ -1,6 +1,7 @@
 import json
 import streamlit as st
 import geemap
+import ee
 # Configuração da página
 #st.set_page_config(layout="wide")
 #st.title("Google Earth Engine no Streamlit 🌍")
