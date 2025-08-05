@@ -203,7 +203,9 @@ def main():
                                       type=['gpkg', 'shp', 'kml', 'kmz'],
                                       accept_multiple_files=True)
       
-        # Controles de área
+if uploaded_file:
+    processar_arquivo_carregado(uploaded_file[0])        
+          
         if st.button("▶️ Área Amostral"):
             st.session_state.modo_desenho = 'amostral'
             st.success("Modo desenho ativado: Área Amostral")
@@ -446,7 +448,3 @@ def exportar_dados():
         mime="application/zip"
     )
     st.success("Dados preparados para exportação!")
-
-# Processa arquivos carregados
-if uploaded_file:
-    processar_arquivo_carregado(uploaded_file[0])
