@@ -202,9 +202,7 @@ def main():
         uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
                                       type=['gpkg', 'shp', 'kml', 'kmz'],
                                       accept_multiple_files=True)
-        if uploaded_file:
-            processar_arquivo_carregado(uploaded_file[0])
-        
+      
         # Controles de área
         if st.button("▶️ Área Amostral"):
             st.session_state.modo_desenho = 'amostral'
