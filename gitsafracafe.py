@@ -1,7 +1,7 @@
 import json
 import streamlit as st
 import geemap
-import ee
+import ee 
 # Configuração da página
 #st.set_page_config(layout="wide")
 #st.title("Google Earth Engine no Streamlit 🌍")
@@ -148,7 +148,7 @@ def create_map():
         st.stop()
 
 # Função para exibição segura do mapa
-def safe_st_folium(m, width=800, height=600):
+def safe_st_folium(m, width=600, height=400):
     try:
         return st_folium(m, width=width, height=height)
     except Exception:
