@@ -49,8 +49,7 @@ import geopandas as gpd
 import streamlit as st
 from shapely.geometry import Point, mapping, shape
 from fiona.drvsupport import supported_drivers
-from streamlit_folium import st_folium
-import folium
+import pydeck as pdk
 from io import BytesIO
 import base64
 
@@ -108,45 +107,64 @@ def converter_para_kg(valor, unidade):
 def get_utm_epsg(lon, lat):
     utm_zone = int((lon + 180) / 6) + 1
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
-
-def safe_st_folium(m, width=800, height=600):
-    """Wrapper seguro para st_folium com fallback"""
-    try:
-        from streamlit_folium import st_folium
-        return st_folium(
-            m,
-            width=width,
-            height=height,
-            returned_objects=["last_clicked"]
-     except Exception:
-        # Fallback para html direto
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as f:
-            m.save(f.name)
-            html = open(f.name).read()
-        return st.components.v1.html(html, width=width, height=height)    
-        )
    
 def create_map():
-    try:
-        m = geemap.Map(center=[-15, -55], zoom=4)
-        
-        # Verificação de atributos essenciais
-        if not hasattr(m, '_id'):
-            st.error("Erro na criação do mapa Folium")
-            st.stop()
-            
-        # Adição de basemap com fallback
-        try:
-            m.add_basemap('HYBRID')
-        except Exception:
-            m.add_basemap('OpenStreetMap')
-            
-        return m
-    except Exception as e:
-        st.error(f"Falha crítica na criação do mapa: {str(e)}")
-        st.stop()
+    """Cria um mapa Pydeck com as camadas necessárias"""
+    layers = []
 
+        # Adiciona polígono se existir
+    if st.session_state.gdf_poligono is not None:
+        polygon_layer = pdk.Layer(
+            "PolygonLayer",
+            data=st.session_state.gdf_poligono,
+            get_polygon="geometry.coordinates",
+            get_fill_color=[0, 0, 255, 100],
+            get_line_color=[0, 0, 255],
+            pickable=True,
+            auto_highlight=True,
+        )
+        layers.append(polygon_layer)
+    
+    # Adiciona pontos se existirem
+    if st.session_state.gdf_pontos is not None:
+        # Converte para formato que o Pydeck pode usar
+        points_df = st.session_state.gdf_pontos[['longitude', 'latitude', 'coletado']].copy()
+    points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])
+        
+        point_layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=points_df,
+            get_position=["longitude", "latitude"],
+            get_color="color",
+            get_radius=50,
+            pickable=True,
+        )
+        layers.append(point_layer)
+    
+    # Configuração inicial do mapa
+    view_state = pdk.ViewState(
+        latitude=-15,
+        longitude=-55,
+        zoom=4,
+        pitch=0,
+    )
+    
+    return pdk.Deck(
+        layers=layers,
+        initial_view_state=view_state,
+        map_style="mapbox://styles/mapbox/satellite-v9",
+        tooltip={
+    "html": """
+        <b>Ponto:</b> {Code}<br/>
+        <b>Produtividade:</b> {valor} {unidade}<br/>
+        <b>Coletado:</b> {coletado}
+    """,
+    "style": {
+        "backgroundColor": "steelblue",
+        "color": "white"
+    }
+}
+        
 # Interface principal
 import streamlit as st
 
@@ -231,27 +249,20 @@ def main():
         if st.button("💾 Exportar dados"):
             exportar_dados()
 
-    with col2:
+        with col2:
         st.header("Mapa Interativo")
         
-        # Criação do mapa
-        m = create_map()
+        # Cria e exibe o mapa Pydeck
+        deck = create_map()
+        st.pydeck_chart(deck)
         
-        # Adiciona geometrias ao mapa
-        if st.session_state.gdf_poligono is not None:
-            m.add_gdf(st.session_state.gdf_poligono, layer_name="Área Amostral", style={'color': 'blue'})
-        
-        if st.session_state.gdf_pontos is not None:
-            for idx, row in st.session_state.gdf_pontos.iterrows():
-                color = 'green' if row['coletado'] else 'orange'
-                folium.CircleMarker(
-                    location=[row.geometry.y, row.geometry.x],
-                    radius=5,
-                    color=color,
-                    fill=True,
-                    fill_color=color,
-                    popup=f"Ponto {idx+1}"
-                ).add_to(m)
+        # Tratamento de cliques para adição manual de pontos
+        if deck.last_clicked and st.session_state.get('inserir_manual'):
+            click_data = deck.last_clicked
+            if isinstance(click_data, dict) and 'latitude' in click_data and 'longitude' in click_data:
+                adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
+                st.session_state.inserir_manual = False
+                st.rerun()
         
         # Exibição do mapa
         map_output = safe_st_folium(m, width=800, height=600)
