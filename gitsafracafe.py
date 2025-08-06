@@ -1,12 +1,33 @@
 import json
 import streamlit as st
 import geemap
-import ee 
-# Configuração da página
-st.set_page_config(layout="wide")
-#st.title("Google Earth Engine no Streamlit 🌍")
+import ee
+import json
+import time
+import random
+import string
+import numpy as np
+import pandas as pd
+import zipfile
+import geopandas as gpd
+import streamlit as st
+from shapely.geometry import Point, mapping, shape
+from fiona.drvsupport import supported_drivers
+import pydeck as pdk
+from io import BytesIO
+import base64
+import os
 
-# Inicialização do GEE com tratamento de erro
+st.set_page_config(layout="wide")
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 0rem;
+        padding-bottom: 1rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 try:
     # Verifica se as credenciais existem
     if "GEE_CREDENTIALS" not in st.secrets:
@@ -32,29 +53,6 @@ try:
 except Exception as e:
     st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
 
-################################
-# INICIAR GERAÇÃO DO MAPA
-################################
-
-import json
-import time
-import random
-import string
-import numpy as np
-import pandas as pd
-import zipfile
-import geemap
-import ee
-import geopandas as gpd
-import streamlit as st
-from shapely.geometry import Point, mapping, shape
-from fiona.drvsupport import supported_drivers
-import pydeck as pdk
-from io import BytesIO
-import base64
-import os
-
-# Variáveis de estado (substituem as variáveis globais)
 if 'gdf_poligono' not in st.session_state:
     st.session_state.gdf_poligono = None
 if 'gdf_pontos' not in st.session_state:
@@ -68,13 +66,11 @@ if 'densidade_plantas' not in st.session_state:
 if 'produtividade_media' not in st.session_state:
     st.session_state.produtividade_media = None
 
-
 # Funções auxiliares
 def gerar_codigo():
     letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     numeros = ''.join(random.choices(string.digits, k=2))
     return f"{letras}-{numeros}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=4))}"
-
 
 def converter_para_kg(valor, unidade):
     if pd.isna(valor):
@@ -99,7 +95,7 @@ def get_utm_epsg(lon, lat):
 
 
 def create_map():
-    """Cria um mapa Pydeck com as camadas necessárias"""
+    """Cria área de produção"""
     layers = []
 
     # Adiciona polígono se existir
@@ -153,7 +149,6 @@ def create_map():
             }
         }
     )
-
 
 def main():
     st.title("Sistema de previsão avançada da produtividade do café")  
@@ -226,7 +221,7 @@ def main():
             exportar_dados()
 
     with col2:
-        st.header("Mapa Interativo")
+        st.header("Mapa de visualização")
         deck = create_map()
         st.pydeck_chart(deck)
 
@@ -345,7 +340,7 @@ def inserir_produtividade():
         st.warning("Nenhum ponto disponível!")
         return
     
-    with st.expander("Editar Produtividade dos Pontos"):
+    with st.expander("Editar dados de produtividade"):
         for idx, row in st.session_state.gdf_pontos.iterrows():
             cols = st.columns([1, 2, 2, 1])
             with cols[0]:
@@ -378,8 +373,8 @@ def inserir_produtividade():
             st.session_state.gdf_pontos.at[idx, 'coletado'] = coletado
             st.session_state.gdf_pontos.at[idx, 'maduro_kg'] = converter_para_kg(novo_valor, nova_unidade)
         
-        if st.button("Salvar Alterações"):
-            st.success("Dados de produtividade atualizados!")
+        if st.button("Salvar alterações"):
+            st.success("Dados de produtividade atualizados.")
             st.rerun()
 
 def exportar_dados():
