@@ -2,7 +2,6 @@ import json
 import streamlit as st
 import geemap
 import ee
-import json
 import time
 import random
 import string
@@ -10,46 +9,37 @@ import numpy as np
 import pandas as pd
 import zipfile
 import geopandas as gpd
-import streamlit as st
-from shapely.geometry import Point, mapping, shape
+from shapely.geometry import Point
 from fiona.drvsupport import supported_drivers
 import pydeck as pdk
 from io import BytesIO
 import base64
 import os
 
+# ✅ Configuração da página e remoção do espaço extra
 st.set_page_config(layout="wide")
 st.markdown("""
     <style>
     .block-container {
-        padding-top: 0rem;
-        padding-bottom: 1rem;
+        padding-top: 0rem !important;
+        padding-bottom: 1rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
+# ✅ Inicialização do GEE (sem exibir mapa extra no topo)
 try:
-    # Verifica se as credenciais existem
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
     else:
-        # Carrega as credenciais
         credentials_dict = dict(st.secrets["GEE_CREDENTIALS"])
         credentials_json = json.dumps(credentials_dict)
 
-        # Inicializa o GEE
         credentials = ee.ServiceAccountCredentials(
             email=credentials_dict["client_email"],
             key_data=credentials_json
         )
         ee.Initialize(credentials)
-        #st.success("✅ Google Earth Engine inicializado com sucesso!")
-
-        # Exemplo: Carrega um mapa do GEE
-        Map = geemap.Map(center=(40, -100), zoom=4)
-        Map.add_basemap("SATELLITE")  # Adiciona imagem de satélite
-        Map.to_streamlit()  # Renderiza o mapa no Streamlit
-
 except Exception as e:
     st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
 
