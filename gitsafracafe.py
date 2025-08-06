@@ -7,14 +7,13 @@ import random
 import string
 import numpy as np
 import pandas as pd
-import zipfile
 import geopandas as gpd
 from shapely.geometry import Point
-from fiona.drvsupport import supported_drivers
-import pydeck as pdk
 from io import BytesIO
 import base64
 import os
+import folium
+from streamlit_folium import st_folium
 
 # ✅ Configuração da página
 st.set_page_config(layout="wide")
@@ -28,14 +27,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ✅ Inicialização do GEE (sem exibir mapa aqui para não ocupar espaço)
+# ✅ Inicialização do GEE
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
     else:
         credentials_dict = dict(st.secrets["GEE_CREDENTIALS"])
         credentials_json = json.dumps(credentials_dict)
-
         credentials = ee.ServiceAccountCredentials(
             email=credentials_dict["client_email"],
             key_data=credentials_json
@@ -44,6 +42,7 @@ try:
 except Exception as e:
     st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
 
+# ✅ Inicialização do estado
 if 'gdf_poligono' not in st.session_state:
     st.session_state.gdf_poligono = None
 if 'gdf_pontos' not in st.session_state:
@@ -70,7 +69,6 @@ def converter_para_kg(valor, unidade):
         valor = float(valor)
     except:
         return 0
-
     if unidade == 'kg':
         return valor
     elif unidade == 'latas':
@@ -83,87 +81,98 @@ def get_utm_epsg(lon, lat):
     utm_zone = int((lon + 180) / 6) + 1
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
+# ✅ Substituição do mapa para Folium
 def create_map():
-    """Cria área de produção"""
-    layers = []
+    m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
 
+    # Polígono amostral
     if st.session_state.gdf_poligono is not None:
-        polygon_layer = pdk.Layer(
-            "PolygonLayer",
-            data=st.session_state.gdf_poligono,
-            get_polygon="geometry.coordinates",
-            get_fill_color=[0, 0, 255, 100],
-            get_line_color=[0, 0, 255],
-            pickable=True,
-            auto_highlight=True,
-        )
-        layers.append(polygon_layer)
+        folium.GeoJson(
+            st.session_state.gdf_poligono,
+            name="Área Amostral",
+            style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
+        ).add_to(m)
 
+    # Polígono total
+    if st.session_state.gdf_poligono_total is not None:
+        folium.GeoJson(
+            st.session_state.gdf_poligono_total,
+            name="Área Total",
+            style_function=lambda x: {"color": "green", "fillColor": "green", "fillOpacity": 0.3}
+        ).add_to(m)
+
+    # Pontos
     if st.session_state.gdf_pontos is not None:
-        points_df = st.session_state.gdf_pontos[['longitude', 'latitude', 'coletado', 'Code', 'valor', 'unidade']].copy()
-        points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])
-        point_layer = pdk.Layer(
-            "ScatterplotLayer",
-            data=points_df,
-            get_position=["longitude", "latitude"],
-            get_color="color",
-            get_radius=50,
-            pickable=True,
-        )
-        layers.append(point_layer)
+        for _, row in st.session_state.gdf_pontos.iterrows():
+            folium.CircleMarker(
+                location=[row['latitude'], row['longitude']],
+                radius=5,
+                color="green" if row['coletado'] else "red",
+                fill=True,
+                fill_color="green" if row['coletado'] else "red",
+                fill_opacity=0.7,
+                popup=f"Ponto: {row['Code']}<br>Produtividade: {row['valor']} {row['unidade']}"
+            ).add_to(m)
 
-    view_state = pdk.ViewState(
-        latitude=-15,
-        longitude=-55,
-        zoom=4,
-        pitch=0,
-    )
+    folium.LayerControl().add_to(m)
+    return m
 
-    return pdk.Deck(
-        layers=layers,
-        initial_view_state=view_state,
-        map_style="light",  # ✅ Corrigido (sem token do Mapbox)
-        tooltip={
-            "html": """
-                <b>Ponto:</b> {Code}<br/>
-                <b>Produtividade:</b> {valor} {unidade}<br/>
-                <b>Coletado:</b> {coletado}
-            """,
-            "style": {
-                "backgroundColor": "steelblue",
-                "color": "white"
-            }
-        }
-    )
+# ✅ Função para processar arquivo GPKG
+def processar_arquivo_carregado(uploaded_file):
+    try:
+        temp_file = f"./temp_{uploaded_file.name}"
+        with open(temp_file, "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
+        gdf = gpd.read_file(temp_file)
+        os.remove(temp_file)
+
+        if st.session_state.modo_desenho == 'amostral':
+            st.session_state.gdf_poligono = gdf
+            st.success("Área amostral carregada com sucesso!")
+        elif st.session_state.modo_desenho == 'total':
+            st.session_state.gdf_poligono_total = gdf
+            st.success("Área total carregada com sucesso!")
+        return gdf
+    except Exception as e:
+        st.error(f"Erro ao processar arquivo: {str(e)}")
+        return None
+
+# ✅ Funções para pontos e produtividade (mantidas iguais)
+def gerar_pontos_automaticos():
+    if st.session_state.gdf_poligono is None:
+        st.warning("Defina a área amostral primeiro!")
+        return
+    centroid = st.session_state.gdf_poligono.geometry.centroid.iloc[0]
+    epsg = get_utm_epsg(centroid.x, centroid.y)
+    gdf_utm = st.session_state.gdf_poligono.to_crs(epsg=epsg)
+    area_ha = gdf_utm.geometry.area.sum() / 10000
+    lado = np.sqrt(5000)
+    bounds = gdf_utm.total_bounds
+    x_coords = np.arange(bounds[0], bounds[2], lado)
+    y_coords = np.arange(bounds[1], bounds[3], lado)
+    pontos = [Point(x, y) for x in x_coords for y in y_coords if gdf_utm.geometry.iloc[0].contains(Point(x, y))]
+    gdf_pontos = gpd.GeoDataFrame(geometry=pontos, crs=gdf_utm.crs).to_crs("EPSG:4326")
+    gdf_pontos['Code'] = [gerar_codigo() for _ in range(len(gdf_pontos))]
+    gdf_pontos['valor'] = 0
+    gdf_pontos['unidade'] = 'kg'
+    gdf_pontos['maduro_kg'] = 0
+    gdf_pontos['coletado'] = False
+    gdf_pontos['latitude'] = gdf_pontos.geometry.y
+    gdf_pontos['longitude'] = gdf_pontos.geometry.x
+    gdf_pontos['metodo'] = 'auto'
+    st.session_state.gdf_pontos = gdf_pontos
+    st.success(f"{len(gdf_pontos)} pontos gerados automaticamente! Área: {area_ha:.2f} ha")
+
+# ✅ Função principal
 def main():
-    st.title("Sistema de previsão avançada da produtividade do café")  
-    st.markdown("""
-        Este é um projeto de geotecnologia para previsão da produtividade do café,
-        com o uso de imagens do sensor MSI/Sentinel-2A e algoritmos de machine learning.
-    """)
+    st.title("Sistema de previsão avançada da produtividade do café")
     st.subheader("Etapas do projeto e aplicações práticas")
 
-    st.markdown("""
-    - **Área produtiva:** delimitação das áreas de interesse (amostral e total) e geração de pontos amostrais (2 pontos/hectare).
-    - **Coleta de dados:** inserção de informações de produtividade e seleção automática de imagens de satélite (sensor MSI/Sentinel-2A), com 5% de nuvens.
-    - **Cálculo de índices espectrais**: NDVI, GNDVI, MSAVI2 (relação com o desenvolvimento vegetativo); NDRE e CCCI (conteúdo de clorofila); NDMI, NDWI e TWI2 (umidade do solo, conteúdo de água das folhas e umidade do ar) e NBR (estresse térmico).  
-    - **Avaliação da correlação entre a produtividade e índices espectrais**: teste de Shapiro-Wilk para normalidade dos dados e correlação de Pearson (maioria normal) ou Spearman (não normal).
-    - **Modelagem de produtividade:** treinamento com 11 algoritmos de machine learning, avaliação do desempenho (métricas R² e RMSE) e escolha do melhor modelo para previsão da produtividade.
-    - **Geração de mapas interativos:** visualização da variabilidade espacial da produtividade e estimativa antecipada da colheita.
-    - **Exportação de dados:** resultados em formato compatível com SIG, para integração com ferramentas de gestão agrícola.
-    - **Comparação entre safras:** avaliação de padrões visuais e produtivos ao longo do tempo.
-    - **Análise detalhada:** identificação de áreas promissoras ou com necessidade de atenção para o planejamento da próxima safra.
-    """)
-
-    # Upload de arquivos
-    uploaded_file = st.file_uploader("Carregar arquivo (.gpkg, .shp, .kml, .kmz)", 
-                                     type=['gpkg', 'shp', 'kml', 'kmz'],
-                                     accept_multiple_files=True)
-
-    # ✅ Agora está dentro da função main()
+    # Upload de arquivo apenas GPKG
+    uploaded_file = st.file_uploader("Carregar arquivo (.gpkg)", type=['gpkg'])
     if uploaded_file:
-        processar_arquivo_carregado(uploaded_file[0])
+        processar_arquivo_carregado(uploaded_file)
 
     col1, col2 = st.columns([1, 3])
 
@@ -173,11 +182,9 @@ def main():
         if st.button("▶️ Área Amostral"):
             st.session_state.modo_desenho = 'amostral'
             st.success("Modo desenho ativado: Área Amostral")
-        
         if st.button("▶️ Área Total"):
             st.session_state.modo_desenho = 'total'
             st.success("Modo desenho ativado: Área Total")
-        
         if st.button("🗑️ Limpar Área"):
             st.session_state.gdf_poligono = None
             st.session_state.gdf_poligono_total = None
@@ -191,36 +198,18 @@ def main():
         if st.button("🔢 Gerar pontos automaticamente"):
             if st.session_state.gdf_poligono is not None:
                 gerar_pontos_automaticos()
-        
-        if st.button("✏️ Inserir pontos manualmente"):
-            st.session_state.inserir_manual = True
-            st.info("Clique no mapa para adicionar pontos")
 
         st.subheader("Produtividade")
         st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
 
-        if st.button("📝 Inserir produtividade"):
-            if st.session_state.gdf_pontos is not None:
-                inserir_produtividade()
-
-        if st.button("💾 Exportar dados"):
-            exportar_dados()
-
     with col2:
         st.header("Mapa de visualização")
-        deck = create_map()
-        st.pydeck_chart(deck)
-
-        if hasattr(deck, 'last_clicked'):
-            if deck.last_clicked and st.session_state.get('inserir_manual'):
-                click_data = deck.last_clicked
-                if isinstance(click_data, dict) and 'latitude' in click_data and 'longitude' in click_data:
-                    adicionar_ponto(click_data['latitude'], click_data['longitude'], "manual")
-                    st.session_state.inserir_manual = False
-                    st.rerun()
+        mapa = create_map()
+        st_folium(mapa, width=800, height=600)
 
 if __name__ == "__main__":
     main()
+
 # Implementação das funções principais
 def processar_arquivo_carregado(uploaded_file):
     try:
@@ -232,17 +221,7 @@ def processar_arquivo_carregado(uploaded_file):
         # Processa de acordo com o tipo de arquivo
         if uploaded_file.name.endswith('.gpkg'):
             gdf = gpd.read_file(temp_file)
-        elif uploaded_file.name.endswith('.shp'):
-            gdf = gpd.read_file(temp_file)
-        elif uploaded_file.name.endswith('.kml'):
-            gdf = gpd.read_file(temp_file, driver='KML')
-        elif uploaded_file.name.endswith('.kmz'):
-            with zipfile.ZipFile(temp_file, 'r') as kmz:
-                kml_files = [f for f in kmz.namelist() if f.endswith('.kml')]
-                if kml_files:
-                    with kmz.open(kml_files[0]) as kml:
-                        gdf = gpd.read_file(kml, driver='KML')
-        
+            
         # Remove arquivo temporário
         os.remove(temp_file)
         
