@@ -16,18 +16,19 @@ from io import BytesIO
 import base64
 import os
 
-# ✅ Configuração da página e remoção do espaço extra
+# ✅ Configuração da página
 st.set_page_config(layout="wide")
 st.markdown("""
     <style>
     .block-container {
         padding-top: 0rem !important;
-        padding-bottom: 1rem !important;
+        padding-bottom: 1rem;
     }
+    header, footer {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# ✅ Inicialização do GEE (sem exibir mapa extra no topo)
+# ✅ Inicialização do GEE (sem exibir mapa aqui para não ocupar espaço)
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
@@ -56,7 +57,7 @@ if 'densidade_plantas' not in st.session_state:
 if 'produtividade_media' not in st.session_state:
     st.session_state.produtividade_media = None
 
-# Funções auxiliares
+# ✅ Funções auxiliares
 def gerar_codigo():
     letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     numeros = ''.join(random.choices(string.digits, k=2))
@@ -78,17 +79,14 @@ def converter_para_kg(valor, unidade):
         return valor * 0.09
     return valor
 
-
 def get_utm_epsg(lon, lat):
     utm_zone = int((lon + 180) / 6) + 1
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
-
 
 def create_map():
     """Cria área de produção"""
     layers = []
 
-    # Adiciona polígono se existir
     if st.session_state.gdf_poligono is not None:
         polygon_layer = pdk.Layer(
             "PolygonLayer",
@@ -101,7 +99,6 @@ def create_map():
         )
         layers.append(polygon_layer)
 
-    # Adiciona pontos se existirem
     if st.session_state.gdf_pontos is not None:
         points_df = st.session_state.gdf_pontos[['longitude', 'latitude', 'coletado', 'Code', 'valor', 'unidade']].copy()
         points_df['color'] = points_df['coletado'].apply(lambda x: [0, 255, 0, 200] if x else [255, 165, 0, 200])
@@ -115,7 +112,6 @@ def create_map():
         )
         layers.append(point_layer)
 
-    # Configuração inicial do mapa
     view_state = pdk.ViewState(
         latitude=-15,
         longitude=-55,
@@ -126,7 +122,7 @@ def create_map():
     return pdk.Deck(
         layers=layers,
         initial_view_state=view_state,
-        map_style="mapbox://styles/mapbox/satellite-v9",
+        map_style="light",  # ✅ Corrigido (sem token do Mapbox)
         tooltip={
             "html": """
                 <b>Ponto:</b> {Code}<br/>
