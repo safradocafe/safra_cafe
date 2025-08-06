@@ -55,6 +55,8 @@ if 'densidade_plantas' not in st.session_state:
     st.session_state.densidade_plantas = None
 if 'produtividade_media' not in st.session_state:
     st.session_state.produtividade_media = None
+if 'modo_desenho' not in st.session_state:   # ✅ Adicionado
+    st.session_state.modo_desenho = None
 
 # ✅ Funções auxiliares
 def gerar_codigo():
