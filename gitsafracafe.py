@@ -85,24 +85,30 @@ def get_utm_epsg(lon, lat):
 
 # ✅ Substituição do mapa para Folium
 def create_map():
+    # Cria o mapa com OpenStreetMap como camada base
     m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
+    
+    # Adiciona a camada de satélite (Esri World Imagery)
     folium.TileLayer(
-    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attr='Esri',
-    name='Satélite',
-    overlay=False,
-    control=True
-).add_to(m)
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri',
+        name='Satélite',
+        overlay=False,
+        control=True
+    ).add_to(m)
 
-# Adiciona controle de camadas para alternar entre os mapas
-folium.LayerControl().add_to(m)
-    # Polígono amostral
+    # Adiciona controle de camadas (para alternar entre OpenStreetMap e Satélite)
+    folium.LayerControl().add_to(m)
+
+    # Adiciona o polígono amostral (se existir no session_state)
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
             name="Área Amostral",
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
         ).add_to(m)
+    
+    return m  # Retorna o mapa para exibição (necessário se for usar em Streamlit)
 
     # Polígono total
     if st.session_state.gdf_poligono_total is not None:
