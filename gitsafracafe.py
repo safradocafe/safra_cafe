@@ -97,8 +97,20 @@ def create_map():
         control=True
     ).add_to(m)
 
-    # Adiciona controle de camadas (para alternar entre OpenStreetMap e Satélite)
-    folium.LayerControl().add_to(m)
+    # Adiciona controle de desenho (para áreas e pontos)
+    draw_options = {
+        'polyline': False,
+        'rectangle': False,
+        'circle': False,
+        'circlemarker': False,
+        'marker': st.session_state.get('modo_desenho') == 'amostral'  # Habilita marcadores apenas no modo área amostral
+    }
+    draw = folium.plugins.Draw(
+        draw_options=draw_options,
+        export=False,
+        position='topleft'
+    )
+    draw.add_to(m)
 
     # Adiciona o polígono amostral (se existir no session_state)
     if st.session_state.gdf_poligono is not None:
@@ -107,8 +119,6 @@ def create_map():
             name="Área Amostral",
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
         ).add_to(m)
-    
-    return m  # Retorna o mapa para exibição (necessário se for usar em Streamlit)
 
     # Polígono total
     if st.session_state.gdf_poligono_total is not None:
