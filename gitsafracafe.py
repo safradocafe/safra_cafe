@@ -14,7 +14,8 @@ import base64
 import os
 import folium
 from streamlit_folium import st_folium
-
+import zipfile
+from io import BytesIO
 # ✅ Configuração da página
 st.set_page_config(layout="wide")
 st.markdown("""
@@ -87,8 +88,6 @@ def get_utm_epsg(lon, lat):
 def create_map():
     # Cria o mapa com OpenStreetMap como camada base
     m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
-    
-    # Adiciona a camada de satélite (Esri World Imagery)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri',
@@ -98,20 +97,39 @@ def create_map():
     ).add_to(m)
 
     # Adiciona controle de desenho (para áreas e pontos)
-    draw_options = {
-        'polyline': False,
-        'rectangle': False,
-        'circle': False,
-        'circlemarker': False,
-        'marker': st.session_state.get('modo_desenho') == 'amostral'  # Habilita marcadores apenas no modo área amostral
-    }
     draw = folium.plugins.Draw(
-        draw_options=draw_options,
+        draw_options={
+            'polyline': False,
+            'rectangle': True,
+            'circle': False,
+            'circlemarker': False,
+            'marker': False,
+            'polygon': True
+        },
         export=False,
         position='topleft'
     )
     draw.add_to(m)
-
+ # Processa eventos de desenho
+    if st.session_state.get('modo_desenho'):
+        st_folium(m, width=800, height=600, key='mapa_desenho')
+        
+        # Captura o desenho feito
+        drawing = st.session_state.get('mapa_desenho')
+        if drawing and drawing.get('last_active_drawing'):
+            geometry = drawing['last_active_drawing']['geometry']
+            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+            
+            if st.session_state.modo_desenho == 'amostral':
+                st.session_state.gdf_poligono = gdf
+                st.success("Área amostral definida!")
+            elif st.session_state.modo_desenho == 'total':
+                st.session_state.gdf_poligono_total = gdf
+                st.success("Área total definida!")
+            
+            # Limpa o desenho para evitar reprocessamento
+            st.session_state.mapa_desenho = None
+            st.rerun()
     # Adiciona o polígono amostral (se existir no session_state)
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
@@ -205,14 +223,10 @@ def salvar_pontos():
     st.success("✅ Dados dos pontos preparados para exportação!")
 
 def exportar_dados():
-    """Exporta dados no formato ZIP (equivalente ao exportar_btn)"""
-    if st.session_state.gdf_poligono is None:
-        st.warning("⚠️ Nenhuma área desenhada para exportar")
+    if st.session_state.gdf_poligono is None or st.session_state.gdf_poligono_total is None:
+        st.warning("⚠️ É necessário definir ambas as áreas (amostral e total) antes de exportar!")
         return
-
-    import zipfile
-    from io import BytesIO
-
+  
     # Cria buffer ZIP
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -255,9 +269,12 @@ def main():
     st.subheader("Sistema avançado de previsão da produtividade do café com imagens de satélite (sensor MSI/Sentintel-2A) e algoritmos de Machine Learning")
 
     # Upload de arquivo apenas GPKG
-    uploaded_file = st.file_uploader("Carregar arquivo (.gpkg)", type=['gpkg'])
-    if uploaded_file:
-        processar_arquivo_carregado(uploaded_file)
+    uploaded_file_amostral = st.file_uploader("Carregar área amostral (.gpkg)", type=['gpkg'], key='upload_amostral')
+    if uploaded_file_amostral:
+        processar_arquivo_carregado(uploaded_file_amostral, 'amostral')
+    uploaded_file_total = st.file_uploader("Carregar área total (.gpkg)", type=['gpkg'], key='upload_total')
+    if uploaded_file_total:
+        processar_arquivo_carregado(uploaded_file_total, 'total')
     if st.session_state.get('modo_insercao') == 'manual':
         inserir_ponto_manual()
         return
@@ -268,7 +285,12 @@ def main():
 
         if st.button("▶️ Área Amostral"):
             st.session_state.modo_desenho = 'amostral'
-            st.success("Modo desenho ativado: Área Amostral")     
+            st.session_state.modo_insercao = None  # Desativa outros modos
+            st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")    
+        if st.button("▶️ Área Total"):
+            st.session_state.modo_desenho = 'total'
+            st.session_state.modo_insercao = None  # Desativa outros modos
+            st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
         if st.button("✏️ Inserir pontos manualmente"):
         # Implementar lógica de inserção manual (similar ao código 1)
             st.session_state.modo_insercao = 'manual'
@@ -277,10 +299,7 @@ def main():
         if st.button("💾 Salvar pontos"):
             salvar_pontos()  # Função adicionada acima
         if st.button("💾 Exportar dados"):
-            exportar_dados()  # Função adicionada acima
-        if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
-            st.success("Modo desenho ativado: Área Total")
+            exportar_dados()        
         if st.button("🗑️ Limpar Área"):
             st.session_state.gdf_poligono = None
             st.session_state.gdf_poligono_total = None
@@ -307,25 +326,19 @@ if __name__ == "__main__":
     main()
 
 # Implementação das funções principais
-def processar_arquivo_carregado(uploaded_file):
+def processar_arquivo_carregado(uploaded_file, tipo_area):
     try:
-        # Cria um arquivo temporário
         temp_file = f"./temp_{uploaded_file.name}"
         with open(temp_file, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        
-        # Processa de acordo com o tipo de arquivo
-        if uploaded_file.name.endswith('.gpkg'):
-            gdf = gpd.read_file(temp_file)
-            
-        # Remove arquivo temporário
+
+        gdf = gpd.read_file(temp_file)
         os.remove(temp_file)
-        
-        # Atualiza estado conforme o modo
-        if st.session_state.modo_desenho == 'amostral':
+
+        if tipo_area == 'amostral':
             st.session_state.gdf_poligono = gdf
             st.success("Área amostral carregada com sucesso!")
-        elif st.session_state.modo_desenho == 'total':
+        elif tipo_area == 'total':
             st.session_state.gdf_poligono_total = gdf
             st.success("Área total carregada com sucesso!")
         
