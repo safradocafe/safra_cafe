@@ -152,7 +152,7 @@ def create_map():
             folium.CircleMarker(
                 location=[row['latitude'], row['longitude']],
                 radius=5,
-                color="green" if row['coletado'] else "red",
+                color="green",
                 fill=True,
                 fill_color="green" if row['coletado'] else "red",
                 fill_opacity=0.7,
@@ -223,12 +223,7 @@ def processar_pontos_produtividade(uploaded_file):
         gdf = processar_arquivo_carregado(uploaded_file)  # Usa a função principal sem tipo
         
         if gdf is not None:
-            # Verifica colunas necessárias
-            required_columns = ['valor', 'unidade', 'coletado']
-            if not all(col in gdf.columns for col in required_columns):
-                st.warning("⚠️ O arquivo de pontos deve conter as colunas: 'valor', 'unidade', 'coletado'")
-                return
-            
+                      
             st.session_state.gdf_pontos = gdf
             st.success(f"✅ {len(gdf)} pontos carregados com sucesso!")
             
@@ -265,13 +260,7 @@ def salvar_pontos():
     """Prepara os dados para exportação (equivalente ao btn_salvar_pontos)"""
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Nenhum ponto para salvar!")
-        return
-
-    # Garante que maduro_kg está calculado
-    st.session_state.gdf_pontos['maduro_kg'] = st.session_state.gdf_pontos.apply(
-        lambda row: converter_para_kg(row['valor'], row['unidade']),
-        axis=1
-    )
+        return   
     st.success("✅ Dados dos pontos preparados para exportação!")
 
 def exportar_dados():
