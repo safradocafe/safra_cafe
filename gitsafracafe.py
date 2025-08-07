@@ -377,12 +377,7 @@ def main():
             # Unidade de produtividade
             st.subheader("Produtividade")
             st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
-
-    with col2:
-        st.header("Mapa de visualização")
-        mapa = create_map()
-        st_folium(mapa, width=800, height=600)
-
+            
 if __name__ == "__main__":
     main()
 
