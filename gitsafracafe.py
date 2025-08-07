@@ -181,6 +181,64 @@ def gerar_pontos_automaticos():
     st.session_state.gdf_pontos = gdf_pontos
     st.success(f"{len(gdf_pontos)} pontos gerados automaticamente! Área: {area_ha:.2f} ha")
 
+def salvar_pontos():
+    """Prepara os dados para exportação (equivalente ao btn_salvar_pontos)"""
+    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
+        st.warning("⚠️ Nenhum ponto para salvar!")
+        return
+
+    # Garante que maduro_kg está calculado
+    st.session_state.gdf_pontos['maduro_kg'] = st.session_state.gdf_pontos.apply(
+        lambda row: converter_para_kg(row['valor'], row['unidade']),
+        axis=1
+    )
+    st.success("✅ Dados dos pontos preparados para exportação!")
+
+def exportar_dados():
+    """Exporta dados no formato ZIP (equivalente ao exportar_btn)"""
+    if st.session_state.gdf_poligono is None:
+        st.warning("⚠️ Nenhuma área desenhada para exportar")
+        return
+
+    import zipfile
+    from io import BytesIO
+
+    # Cria buffer ZIP
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        # Parâmetros da área (JSON)
+        parametros = {
+            'densidade_pes_ha': st.session_state.densidade_plantas,
+            'produtividade_media_sacas_ha': st.session_state.produtividade_media
+        }
+        zipf.writestr('parametros_area.json', json.dumps(parametros))
+
+        # Polígono amostral (GPKG)
+        if st.session_state.gdf_poligono is not None:
+            poligono_buffer = BytesIO()
+            st.session_state.gdf_poligono.to_file(poligono_buffer, driver='GPKG')
+            zipf.writestr('area_poligono.gpkg', poligono_buffer.getvalue())
+
+        # Polígono total (GPKG)
+        if st.session_state.gdf_poligono_total is not None:
+            poligono_total_buffer = BytesIO()
+            st.session_state.gdf_poligono_total.to_file(poligono_total_buffer, driver='GPKG')
+            zipf.writestr('area_total_poligono.gpkg', poligono_total_buffer.getvalue())
+
+        # Pontos (GPKG)
+        if st.session_state.gdf_pontos is not None:
+            pontos_buffer = BytesIO()
+            st.session_state.gdf_pontos.to_file(pontos_buffer, driver='GPKG')
+            zipf.writestr('pontos_produtividade.gpkg', pontos_buffer.getvalue())
+
+    # Botão de download
+    st.download_button(
+        label="💾 Exportar dados (ZIP)",
+        data=zip_buffer.getvalue(),
+        file_name="dados_produtividade.zip",
+        mime="application/zip"
+    )
+
 # ✅ Função principal
 def main():
     st.title("SAFRA DO CAFÉ")
@@ -190,7 +248,9 @@ def main():
     uploaded_file = st.file_uploader("Carregar arquivo (.gpkg)", type=['gpkg'])
     if uploaded_file:
         processar_arquivo_carregado(uploaded_file)
-
+    if st.session_state.get('modo_insercao') == 'manual':
+        inserir_ponto_manual()
+        return
     col1, col2 = st.columns([1, 3])
 
     with col1:
@@ -198,7 +258,16 @@ def main():
 
         if st.button("▶️ Área Amostral"):
             st.session_state.modo_desenho = 'amostral'
-            st.success("Modo desenho ativado: Área Amostral")
+            st.success("Modo desenho ativado: Área Amostral")     
+        if st.button("✏️ Inserir pontos manualmente"):
+        # Implementar lógica de inserção manual (similar ao código 1)
+            st.session_state.modo_insercao = 'manual'
+        if st.button("📝 Inserir produtividade"):
+            inserir_produtividade()  # Função já existente
+        if st.button("💾 Salvar pontos"):
+            salvar_pontos()  # Função adicionada acima
+        if st.button("💾 Exportar dados"):
+            exportar_dados()  # Função adicionada acima
         if st.button("▶️ Área Total"):
             st.session_state.modo_desenho = 'total'
             st.success("Modo desenho ativado: Área Total")
@@ -399,3 +468,12 @@ def exportar_dados():
         mime="application/zip"
     )
     st.success("Dados preparados para exportação!")
+
+def inserir_ponto_manual():
+    """Implementa a lógica do btn_inserir_manual (coordenadas via input)"""
+    with st.form("Inserir Ponto Manual"):
+        lat = st.number_input("Latitude:", value=-15.0)
+        lon = st.number_input("Longitude:", value=-55.0)
+        if st.form_submit_button("Adicionar Ponto"):
+            adicionar_ponto(lat, lon, "manual")
+            st.rerun()
