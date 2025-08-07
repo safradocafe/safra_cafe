@@ -110,26 +110,7 @@ def create_map():
         position='topleft'
     )
     draw.add_to(m)
- # Processa eventos de desenho
-    if st.session_state.get('modo_desenho'):
-        st_folium(m, width=800, height=600, key='mapa_desenho')
-        
-        # Captura o desenho feito
-        drawing = st.session_state.get('mapa_desenho')
-        if drawing and drawing.get('last_active_drawing'):
-            geometry = drawing['last_active_drawing']['geometry']
-            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-            
-            if st.session_state.modo_desenho == 'amostral':
-                st.session_state.gdf_poligono = gdf
-                st.success("Área amostral definida!")
-            elif st.session_state.modo_desenho == 'total':
-                st.session_state.gdf_poligono_total = gdf
-                st.success("Área total definida!")
-            
-            # Limpa o desenho para evitar reprocessamento
-            st.session_state.mapa_desenho = None
-            st.rerun()
+
     # Adiciona o polígono amostral (se existir no session_state)
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
@@ -341,11 +322,13 @@ def main():
                 st.session_state.modo_desenho = 'amostral'
                 st.session_state.modo_insercao = None
                 st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
+                st.rerun()
 
             if st.button("▶️ Área Total"):
                 st.session_state.modo_desenho = 'total'
                 st.session_state.modo_insercao = None
                 st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
+                st.rerun()
 
             if st.button("✏️ Inserir pontos manualmente"):
                 st.session_state.modo_insercao = 'manual'
@@ -381,6 +364,20 @@ def main():
         st.header("Mapa de visualização")
         mapa = create_map()
         st_folium(mapa, width=800, height=600)
+        if map_data and map_data.get('last_active_drawing'):
+            geometry = map_data['last_active_drawing']['geometry']
+            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+        
+            if st.session_state.modo_desenho == 'amostral':
+                st.session_state.gdf_poligono = gdf
+                st.success("Área amostral definida!")
+            elif st.session_state.modo_desenho == 'total':
+                st.session_state.gdf_poligono_total = gdf
+                st.success("Área total definida!")
+        
+        # Limpa o estado para evitar reprocessamento
+            st.session_state.modo_desenho = None
+            st.rerun()
 
 if __name__ == "__main__":
     main()
