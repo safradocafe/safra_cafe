@@ -154,7 +154,7 @@ def create_map():
                 radius=5,
                 color="green",
                 fill=True,
-                fill_color="green" if row['coletado'] else "red",
+                fill_color="green",
                 fill_opacity=0.7,
                 popup=f"Ponto: {row['Code']}<br>Produtividade: {row['valor']} {row['unidade']}"
             ).add_to(m)
