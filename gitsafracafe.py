@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
+from shapely.geometry import shape
 from io import BytesIO
 import base64
 import os
@@ -58,7 +59,9 @@ if 'produtividade_media' not in st.session_state:
     st.session_state.produtividade_media = None
 if 'modo_desenho' not in st.session_state:   # ✅ Adicionado
     st.session_state.modo_desenho = None
-
+if 'mapa_data' not in st.session_state:
+    st.session_state.mapa_data = None
+    
 # ✅ Funções auxiliares
 def gerar_codigo():
     letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
@@ -363,17 +366,24 @@ def main():
     with col2:
         st.header("Mapa de visualização")
         mapa = create_map()
-        st_folium(mapa, width=800, height=600)
-        if map_data and map_data.get('last_active_drawing'):
-            geometry = map_data['last_active_drawing']['geometry']
-            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+    # Atualize esta linha para capturar o retorno do st_folium em uma variável do session_state
+        st.session_state.mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
+    
+    # Captura o desenho feito
+    if st.session_state.get('mapa_data') and st.session_state.mapa_data.get('last_active_drawing'):
+        geometry = st.session_state.mapa_data['last_active_drawing']['geometry']
+        gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
         
-            if st.session_state.modo_desenho == 'amostral':
-                st.session_state.gdf_poligono = gdf
-                st.success("Área amostral definida!")
-            elif st.session_state.modo_desenho == 'total':
-                st.session_state.gdf_poligono_total = gdf
-                st.success("Área total definida!")
+        if st.session_state.modo_desenho == 'amostral':
+            st.session_state.gdf_poligono = gdf
+            st.success("Área amostral definida!")
+        elif st.session_state.modo_desenho == 'total':
+            st.session_state.gdf_poligono_total = gdf
+            st.success("Área total definida!")
+        
+        # Limpa o estado para evitar reprocessamento
+        st.session_state.modo_desenho = None
+        st.rerun()
         
         # Limpa o estado para evitar reprocessamento
             st.session_state.modo_desenho = None
