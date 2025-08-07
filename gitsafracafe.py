@@ -308,86 +308,107 @@ def exportar_dados():
 # ✅ Função principal
 def main():
     st.title("SAFRA DO CAFÉ")
-    st.subheader("Sistema avançado de previsão da produtividade do café com imagens de satélite (sensor MSI/Sentintel-2A) e algoritmos de Machine Learning")
+    st.subheader("Sistema avançado de previsão da produtividade do café com imagens de satélite (sensor MSI/Sentinel-2A) e algoritmos de Machine Learning")
 
     if st.session_state.get('modo_insercao') == 'manual':
         inserir_ponto_manual()
         return
+
     col1, col2 = st.columns([1, 3])
 
     with col1:
         st.header("Controles")
+
+        # Upload da área amostral
         uploaded_area = st.file_uploader(
-        "1. Área Amostral (.gpkg)", 
-        type=['gpkg'],
-        key='upload_area'
-    )
-    if uploaded_area:
-        processar_arquivo_carregado(uploaded_area, tipo='amostral')
-    
-    # Upload para pontos de produtividade
-    uploaded_pontos = st.file_uploader(
-        "2. Pontos de Produtividade (.gpkg)",
-        type=['gpkg'],
-        key='upload_pontos'
-    )
-    if uploaded_pontos:
-        processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
-        
-        if st.button("▶️ Área Amostral"):
-            st.session_state.modo_desenho = 'amostral'
-            st.session_state.modo_insercao = None
-            st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")    
-        if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
-            st.session_state.modo_insercao = None  # Desativa outros modos
-            st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
-        if st.button("✏️ Inserir pontos manualmente"):
-        # Implementar lógica de inserção manual (similar ao código 1)
-            st.session_state.modo_insercao = 'manual'
-        if st.button("📝 Inserir produtividade"):
-            inserir_produtividade()  # Função já existente
-        if st.button("💾 Salvar pontos"):
-            salvar_pontos()  # Função adicionada acima
-        if st.button("💾 Exportar dados"):
-            exportar_dados()        
-        if st.button("🗑️ Limpar Área"):
-            st.session_state.gdf_poligono = None
-            st.session_state.gdf_poligono_total = None
-            st.session_state.gdf_pontos = None
-            st.success("Áreas limpas!")
-        st.subheader("Dados da área amostral")
-        st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
-        st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
-        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
-            if st.session_state.gdf_poligono is not None:
-                gerar_pontos_automaticos()
-        st.subheader("Produtividade")
-        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
+            "1. Área Amostral (.gpkg)",
+            type=['gpkg'],
+            key='upload_area'
+        )
+        if uploaded_area:
+            processar_arquivo_carregado(uploaded_area, tipo='amostral')
+
+        # Upload dos pontos de produtividade
+        uploaded_pontos = st.file_uploader(
+            "2. Pontos de Produtividade (.gpkg)",
+            type=['gpkg'],
+            key='upload_pontos'
+        )
+        if uploaded_pontos:
+            processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
+
+            # Botões de controle
+            if st.button("▶️ Área Amostral"):
+                st.session_state.modo_desenho = 'amostral'
+                st.session_state.modo_insercao = None
+                st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
+
+            if st.button("▶️ Área Total"):
+                st.session_state.modo_desenho = 'total'
+                st.session_state.modo_insercao = None
+                st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
+
+            if st.button("✏️ Inserir pontos manualmente"):
+                st.session_state.modo_insercao = 'manual'
+
+            if st.button("📝 Inserir produtividade"):
+                inserir_produtividade()
+
+            if st.button("💾 Salvar pontos"):
+                salvar_pontos()
+
+            if st.button("💾 Exportar dados"):
+                exportar_dados()
+
+            if st.button("🗑️ Limpar Área"):
+                st.session_state.gdf_poligono = None
+                st.session_state.gdf_poligono_total = None
+                st.session_state.gdf_pontos = None
+                st.success("Áreas limpas!")
+
+            # Dados da área amostral
+            st.subheader("Dados da área amostral")
+            st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
+            st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
+
+            if st.button("🔢 Gerar pontos automáticos (2/ha)"):
+                if st.session_state.get('gdf_poligono') is not None:
+                    gerar_pontos_automaticos()
+
+            # Unidade de produtividade
+            st.subheader("Produtividade")
+            st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
 
     with col2:
         st.header("Mapa de visualização")
         mapa = create_map()
         st_folium(mapa, width=800, height=600)
 
-if __name__ == "__main__":
-    main()
+# Função para processar arquivos carregados
+def processar_arquivo_carregado(arquivo, tipo):
+    try:
+        gdf = ler_geopackage(arquivo)  # Supondo que essa função exista
 
-        # Armazena no session_state conforme o tipo
-    if tipo_area == 'amostral':
-        st.session_state.gdf_poligono = gdf
-        st.success("✅ Área amostral carregada com sucesso!")
-    elif tipo_area == 'total':
-        st.session_state.gdf_poligono_total = gdf
-        st.success("✅ Área total carregada com sucesso!")
-    else:
-        return gdf  # Retorna o GeoDataFrame se não for especificado o tipo
+        if tipo == 'amostral':
+            st.session_state.gdf_poligono = gdf
+            st.success("✅ Área amostral carregada com sucesso!")
+        elif tipo == 'total':
+            st.session_state.gdf_poligono_total = gdf
+            st.success("✅ Área total carregada com sucesso!")
+        elif tipo == 'pontos':
+            st.session_state.gdf_pontos = gdf
+            st.success("✅ Pontos de produtividade carregados com sucesso!")
+        else:
+            return gdf  # Retorna o GeoDataFrame se tipo não for especificado
 
-    return gdf
+        return gdf
 
     except Exception as e:
         st.error(f"❌ Erro ao processar arquivo: {str(e)}")
         return None
+
+if __name__ == "__main__":
+    main()
 
 def inserir_ponto_manual():   
     with st.form("Inserir Ponto Manual"):
