@@ -386,8 +386,8 @@ def main():
         st.rerun()
         
         # Limpa o estado para evitar reprocessamento
-            st.session_state.modo_desenho = None
-            st.rerun()
+        st.session_state.modo_desenho = None
+        st.rerun()
 
 if __name__ == "__main__":
     main()
