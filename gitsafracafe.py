@@ -168,8 +168,8 @@ def gerar_pontos_automaticos():
 
 # ✅ Função principal
 def main():
-    st.title("Sistema de previsão avançada da produtividade do café")
-    st.subheader("Etapas do projeto e aplicações práticas")
+    st.title("SAFRA DO CAFÉ")
+    st.subheader("Sistema avançado de previsão da produtividade do café com imagens de satélite (sensor MSI/Sentintel-2A) e algoritmos de Machine Learning")
 
     # Upload de arquivo apenas GPKG
     uploaded_file = st.file_uploader("Carregar arquivo (.gpkg)", type=['gpkg'])
