@@ -286,14 +286,7 @@ def main():
     st.title("SAFRA DO CAFÉ")
     st.subheader("Sistema avançado de previsão da produtividade do café com imagens de satélite (sensor MSI/Sentintel-2A) e algoritmos de Machine Learning")
 
-    # Upload de arquivo apenas GPKG
-    uploaded_file_amostral = st.file_uploader("Carregar área amostral (.gpkg)", type=['gpkg'], key='upload_amostral')
-    if uploaded_file_amostral:
-        processar_arquivo_carregado(uploaded_file_amostral, 'amostral')
-    uploaded_file_total = st.file_uploader("Carregar área total (.gpkg)", type=['gpkg'], key='upload_total')
-    if uploaded_file_total:
-        processar_arquivo_carregado(uploaded_file_total, 'total')
-    if st.session_state.get('modo_insercao') == 'manual':
+     if st.session_state.get('modo_insercao') == 'manual':
         inserir_ponto_manual()
         return
     col1, col2 = st.columns([1, 3])
