@@ -156,7 +156,7 @@ def create_map():
                 fill=True,
                 fill_color="green",
                 fill_opacity=0.7,
-                popup=f"Ponto: {row['Code']}<br>Produtividade: {row['valor']} {row['unidade']}"
+                popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']} {row['latitude']} {row['longitude']} {row['geometry']}"
             ).add_to(m)
 
     folium.LayerControl().add_to(m)
