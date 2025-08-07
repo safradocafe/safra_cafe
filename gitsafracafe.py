@@ -374,16 +374,16 @@ if __name__ == "__main__":
     main()
 
         # Armazena no session_state conforme o tipo
-        if tipo_area == 'amostral':
-            st.session_state.gdf_poligono = gdf
-            st.success("✅ Área amostral carregada com sucesso!")
-        elif tipo_area == 'total':
-            st.session_state.gdf_poligono_total = gdf
-            st.success("✅ Área total carregada com sucesso!")
-        else:
-            return gdf  # Retorna o GeoDataFrame se não for especificado o tipo
+    if tipo_area == 'amostral':
+        st.session_state.gdf_poligono = gdf
+        st.success("✅ Área amostral carregada com sucesso!")
+    elif tipo_area == 'total':
+        st.session_state.gdf_poligono_total = gdf
+        st.success("✅ Área total carregada com sucesso!")
+    else:
+        return gdf  # Retorna o GeoDataFrame se não for especificado o tipo
 
-        return gdf
+    return gdf
 
     except Exception as e:
         st.error(f"❌ Erro ao processar arquivo: {str(e)}")
