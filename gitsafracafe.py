@@ -394,29 +394,6 @@ def main():
         mapa = create_map()
         st_folium(mapa, width=800, height=600)
 
-# Função para processar arquivos carregados
-def processar_arquivo_carregado(arquivo, tipo):
-    try:
-        gdf = ler_geopackage(arquivo)  # Supondo que essa função exista
-
-        if tipo == 'amostral':
-            st.session_state.gdf_poligono = gdf
-            st.success("✅ Área amostral carregada com sucesso!")
-        elif tipo == 'total':
-            st.session_state.gdf_poligono_total = gdf
-            st.success("✅ Área total carregada com sucesso!")
-        elif tipo == 'pontos':
-            st.session_state.gdf_pontos = gdf
-            st.success("✅ Pontos de produtividade carregados com sucesso!")
-        else:
-            return gdf  # Retorna o GeoDataFrame se tipo não for especificado
-
-        return gdf
-
-    except Exception as e:
-        st.error(f"❌ Erro ao processar arquivo: {str(e)}")
-        return None
-
 if __name__ == "__main__":
     main()
 
