@@ -164,7 +164,6 @@ def create_map():
 
 # ✅ Função para processar arquivo GPKG
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
-    """Processa arquivos GPKG tanto para área quanto para pontos"""
     try:
         if uploaded_file is None:
             return None
@@ -188,18 +187,29 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
             st.success("✅ Área amostral carregada com sucesso!")
         
         elif tipo == 'pontos':
-            required_cols = ['valor', 'unidade', 'coletado']
-            if not all(col in gdf.columns for col in required_cols):
-                st.warning("⚠️ Arquivo de pontos deve conter: 'valor', 'unidade', 'coletado'")
+            # Colunas obrigatórias para pontos
+            required_cols = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
+            
+            # Verifica se todas as colunas obrigatórias existem
+            colunas_faltantes = [col for col in required_cols if col not in gdf.columns]
+            if colunas_faltantes:
+                st.error(f"❌ Arquivo de pontos está faltando colunas obrigatórias: {', '.join(colunas_faltantes)}")
+                return None
+                
+            # Verifica se a geometria é do tipo ponto
+            if not any(gdf.geometry.type.isin(['Point', 'MultiPoint'])):
+                st.error("❌ O arquivo de pontos deve conter geometrias do tipo Ponto")
                 return None
             
-            if 'Code' not in gdf.columns:
-                gdf['Code'] = [gerar_codigo() for _ in range(len(gdf))]
-            if 'maduro_kg' not in gdf.columns:
-                gdf['maduro_kg'] = gdf.apply(lambda row: converter_para_kg(row['valor'], row['unidade']), axis=1)
+            # Converte para o CRS padrão (EPSG:4326) se necessário
+            if gdf.crs != 'EPSG:4326':
+                gdf = gdf.to_crs('EPSG:4326')
+                gdf['latitude'] = gdf.geometry.y
+                gdf['longitude'] = gdf.geometry.x
             
             st.session_state.gdf_pontos = gdf
             st.success(f"✅ {len(gdf)} pontos carregados com sucesso!")
+            st.info(f"Colunas disponíveis: {', '.join(gdf.columns)}")
 
         return gdf
 
