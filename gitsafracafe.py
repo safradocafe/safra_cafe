@@ -347,11 +347,11 @@ def main():
             st.session_state.gdf_pontos = None
             st.success("Áreas limpas!")
 
-        st.subheader("Parâmetros da Área")
-        st.session_state.densidade_plantas = st.number_input("Plantas por hectare:", value=0.0)
-        st.session_state.produtividade_media = st.number_input("Produtividade média (sacas/ha):", value=0.0)
+        st.subheader("Dados da área amostral")
+        st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
+        st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
 
-        if st.button("🔢 Gerar pontos automaticamente"):
+        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
             if st.session_state.gdf_poligono is not None:
                 gerar_pontos_automaticos()
 
@@ -407,6 +407,14 @@ def processar_arquivo_carregado(uploaded_file, tipo_area=None):
     except Exception as e:
         st.error(f"❌ Erro ao processar arquivo: {str(e)}")
         return None
+
+def inserir_ponto_manual():   
+    with st.form("Inserir Ponto Manual"):
+        lat = st.number_input("Latitude:", value=-15.0)
+        lon = st.number_input("Longitude:", value=-55.0)
+        if st.form_submit_button("Adicionar Ponto"):
+            adicionar_ponto(lat, lon, "manual")
+            st.rerun()
 
 def gerar_pontos_automaticos():
     if st.session_state.gdf_poligono is None:
@@ -553,11 +561,4 @@ def exportar_dados():
     )
     st.success("Dados preparados para exportação!")
 
-def inserir_ponto_manual():
-    """Implementa a lógica do btn_inserir_manual (coordenadas via input)"""
-    with st.form("Inserir Ponto Manual"):
-        lat = st.number_input("Latitude:", value=-15.0)
-        lon = st.number_input("Longitude:", value=-55.0)
-        if st.form_submit_button("Adicionar Ponto"):
-            adicionar_ponto(lat, lon, "manual")
-            st.rerun()
+
