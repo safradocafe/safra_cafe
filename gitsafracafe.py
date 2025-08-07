@@ -86,7 +86,16 @@ def get_utm_epsg(lon, lat):
 # ✅ Substituição do mapa para Folium
 def create_map():
     m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
+    folium.TileLayer(
+    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attr='Esri',
+    name='Satélite',
+    overlay=False,
+    control=True
+).add_to(m)
 
+# Adiciona controle de camadas para alternar entre os mapas
+folium.LayerControl().add_to(m)
     # Polígono amostral
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
