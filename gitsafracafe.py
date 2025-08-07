@@ -183,6 +183,24 @@ def processar_arquivo_carregado(uploaded_file):
         st.error(f"Erro ao processar arquivo: {str(e)}")
         return None
 
+def processar_pontos_produtividade(uploaded_file):
+    """Processa arquivo de pontos de produtividade"""
+    try:
+        gdf = processar_arquivo_carregado(uploaded_file)  # Usa a função principal sem tipo
+        
+        if gdf is not None:
+            # Verifica colunas necessárias
+            required_columns = ['valor', 'unidade', 'coletado']
+            if not all(col in gdf.columns for col in required_columns):
+                st.warning("⚠️ O arquivo de pontos deve conter as colunas: 'valor', 'unidade', 'coletado'")
+                return
+            
+            st.session_state.gdf_pontos = gdf
+            st.success(f"✅ {len(gdf)} pontos carregados com sucesso!")
+            
+    except Exception as e:
+        st.error(f"Erro ao processar pontos: {str(e)}")
+
 # ✅ Funções para pontos e produtividade (mantidas iguais)
 def gerar_pontos_automaticos():
     if st.session_state.gdf_poligono is None:
@@ -282,7 +300,30 @@ def main():
 
     with col1:
         st.header("Controles")
-
+        uploaded_amostral = st.file_uploader(
+        "1. Área Amostral (.gpkg)", 
+        type=['gpkg'],
+        key='upload_amostral'
+    )
+    if uploaded_amostral:
+        processar_arquivo_carregado(uploaded_amostral, 'amostral')
+    uploaded_total = st.file_uploader(
+        "2. Área Total (.gpkg)", 
+        type=['gpkg'],
+        key='upload_total'
+    )
+    if uploaded_total:
+        processar_arquivo_carregado(uploaded_total, 'total')
+    
+    # Upload para pontos de produtividade (opcional)
+    uploaded_pontos = st.file_uploader(
+        "3. Pontos de Produtividade (.gpkg - Opcional)",
+        type=['gpkg'],
+        key='upload_pontos'
+    )
+    if uploaded_pontos:
+        processar_pontos_produtividade(uploaded_pontos)  # Nova função para pontos
+        
         if st.button("▶️ Área Amostral"):
             st.session_state.modo_desenho = 'amostral'
             st.session_state.modo_insercao = None  # Desativa outros modos
@@ -326,25 +367,45 @@ if __name__ == "__main__":
     main()
 
 # Implementação das funções principais
-def processar_arquivo_carregado(uploaded_file, tipo_area):
+def processar_arquivo_carregado(uploaded_file, tipo_area=None):
+    """Processa arquivo GPKG e armazena no session_state conforme o tipo"""
     try:
+        if uploaded_file is None:
+            return None
+            
+        # Verifica extensão do arquivo
+        if not uploaded_file.name.lower().endswith('.gpkg'):
+            st.error("❌ O arquivo deve ter extensão .gpkg")
+            return None
+
+        # Cria arquivo temporário
         temp_file = f"./temp_{uploaded_file.name}"
         with open(temp_file, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
+        # Lê o arquivo geopackage
         gdf = gpd.read_file(temp_file)
         os.remove(temp_file)
 
+        # Verifica se contém geometrias válidas
+        if gdf.empty or not any(gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])):
+            st.error("❌ O arquivo não contém polígonos válidos")
+            return None
+
+        # Armazena no session_state conforme o tipo
         if tipo_area == 'amostral':
             st.session_state.gdf_poligono = gdf
-            st.success("Área amostral carregada com sucesso!")
+            st.success("✅ Área amostral carregada com sucesso!")
         elif tipo_area == 'total':
             st.session_state.gdf_poligono_total = gdf
-            st.success("Área total carregada com sucesso!")
-        
+            st.success("✅ Área total carregada com sucesso!")
+        else:
+            return gdf  # Retorna o GeoDataFrame se não for especificado o tipo
+
         return gdf
+
     except Exception as e:
-        st.error(f"Erro ao processar arquivo: {str(e)}")
+        st.error(f"❌ Erro ao processar arquivo: {str(e)}")
         return None
 
 def gerar_pontos_automaticos():
