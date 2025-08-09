@@ -25,7 +25,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Inicialização do Earth Engine
+# ✅ Inicialização do GEE
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
@@ -37,10 +37,8 @@ try:
             key_data=credentials_json
         )
         ee.Initialize(credentials)
-        st.success("✅ Google Earth Engine inicializado com sucesso!")
 except Exception as e:
     st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
-    st.stop()
 
 # Função para carregar arquivos da nuvem do Streamlit
 def carregar_arquivos_da_nuvem():
