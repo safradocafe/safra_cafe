@@ -279,9 +279,7 @@ def exportar_dados():
     )
 
 # ✅ Função principal
-def main():
-    st.title("SAFRA DO CAFÉ")
-    st.subheader("Sistema avançado de previsão da produtividade do café com imagens de satélite (sensor MSI/Sentinel-2A) e algoritmos de Machine Learning")
+def main():   
 
     if st.session_state.get('modo_insercao') == 'manual':
         inserir_ponto_manual()
