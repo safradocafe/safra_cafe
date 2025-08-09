@@ -414,7 +414,7 @@ def main():
         st.subheader("Produtividade")
         st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
 
-    with col2:
+    with col2: 
         st.header("Mapa de visualização")
         mapa = create_map()
         mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
