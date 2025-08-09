@@ -1,21 +1,19 @@
-import streamlit as st
-
-st.title("Processar Dados")
-st.write("Aqui será feito o processamento dos dados.")
-
 import ee
 import geemap
 import pandas as pd
 import geopandas as gpd
 from datetime import datetime
 import streamlit as st
+import tempfile
+import streamlit as st
 import json
 import os
-import tempfile
+
+st.title("Processamento dos dados")
 
 # Configuração da página do Streamlit
 st.set_page_config(layout="wide")
-st.title("Análise de Produtividade com Sentinel-2")
+st.title("Seleção das imagens do sensor MSI/Sentinel-2A, cálculo dos índices espectrais e criação do banco de dados")
 st.markdown("""
     <style>
     .block-container {
