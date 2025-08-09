@@ -1,0 +1,17 @@
+streamlit
+geemap
+geopandas
+ipyleaflet
+ipywidgets
+shapely
+speechrecognition
+geocoder
+fiona
+numpy
+pandas
+earthengine-api
+ipython
+ipyfilechooser
+streamlit-folium
+geemap
+folium
