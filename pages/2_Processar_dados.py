@@ -98,15 +98,11 @@ except Exception as e:
 
 # Barra lateral - Gerenciamento de resultados
 st.sidebar.header("Gerenciamento de resultados")
-if verificar_resultados_salvos():
-    st.sidebar.success("✅ Há resultados salvos na nuvem")
-    if st.sidebar.button("↩️ Carregar resultados salvos"):
-        gdf_resultado, parametros = carregar_resultados_da_nuvem()
-        if gdf_resultado is not None:
-            st.session_state['gdf_resultado'] = gdf_resultado
-            st.experimental_rerun()
-else:
-    st.sidebar.warning("Nenhum resultado salvo na nuvem")
+if st.sidebar.button("↩️ Carregar resultados existentes"):
+    gdf_resultado, parametros = carregar_resultados_da_nuvem()
+    if gdf_resultado is not None:
+        st.session_state['gdf_resultado'] = gdf_resultado
+        st.experimental_rerun()
 
 # Interface principal
 st.sidebar.header("Configurações")
@@ -306,13 +302,9 @@ if st.sidebar.button("▶️ Executar análise"):
             if 'maduro_kg' in gdf_pontos.columns:
                 gdf_resultado['maduro_kg'] = gdf_pontos['maduro_kg'].values
 
-            # Mostrar resultados
+  # Mostrar resultados
             st.subheader("Resultados da análise")
-            
-            # Criar um DataFrame limpo sem geometria
             df_sem_geometria = gdf_resultado.drop(columns=['geometry'] if 'geometry' in gdf_resultado.columns else [])
-            
-            # Mostrar tabela com resultados
             st.dataframe(df_sem_geometria)
             
             # Opção para download
@@ -324,8 +316,7 @@ if st.sidebar.button("▶️ Executar análise"):
                 mime="text/csv"
             )
 
-            # Opção para salvar na nuvem
-            st.subheader("Gerenciamento de Resultados")
+            # ✅ BOTÃO DE SALVAMENTO DENTRO DO BLOCO DE PROCESSAMENTO
             parametros_analise = {
                 "data_inicio": data_inicio,
                 "data_fim": data_fim,
@@ -336,6 +327,7 @@ if st.sidebar.button("▶️ Executar análise"):
             
             if st.button("💾 Salvar Resultados na Nuvem"):
                 if salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
+                    st.success("Dados salvos com sucesso!")
                     st.session_state['resultados_salvos'] = True
 
         except Exception as e:
