@@ -279,14 +279,7 @@ if st.sidebar.button("▶️ Executar análise"):
                 data=csv,
                 file_name="indices_vegetacao.csv",
                 mime="text/csv"
-            )
+            )            
             
-            # Visualização no mapa
-            st.subheader("Visualização no mapa")
-            mapa = geemap.Map()
-            mapa.add_gdf(gdf_poligono, layer_name="Área de estudo")
-            mapa.add_gdf(gdf_resultado, layer_name="Pontos com índices")
-            mapa.to_streamlit(height=600)
-
         except Exception as e:
             st.error(f"Erro durante o processamento: {str(e)}")
