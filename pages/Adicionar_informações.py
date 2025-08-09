@@ -70,6 +70,7 @@ def create_map():
         control=True
     ).add_to(m)
 
+    # Controle de desenho modificado para permitir múltiplos polígonos
     draw = folium.plugins.Draw(
         draw_options={
             'polyline': False,
@@ -77,13 +78,18 @@ def create_map():
             'circle': False,
             'circlemarker': False,
             'marker': False,
-            'polygon': True
+            'polygon': {
+                'allowIntersection': False,
+                'showArea': True,
+                'repeatMode': False  # Permite desenhar apenas um polígono por vez
+            }
         },
         export=False,
         position='topleft'
     )
     draw.add_to(m)
 
+    # Mostrar área amostral existente (se houver)
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
@@ -91,6 +97,7 @@ def create_map():
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
         ).add_to(m)
 
+    # Mostrar área total existente (se houver)
     if st.session_state.gdf_poligono_total is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono_total,
@@ -98,6 +105,7 @@ def create_map():
             style_function=lambda x: {"color": "green", "fillColor": "green", "fillOpacity": 0.3}
         ).add_to(m)
 
+    # Mostrar pontos existentes (se houver)
     if st.session_state.gdf_pontos is not None:
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
@@ -350,8 +358,8 @@ def main():
 
     with col1:
         st.header("Controles")
-
-        # Uploads
+        
+        # Uploads (mantido igual)
         uploaded_area = st.file_uploader("1. Área Amostral (.gpkg)", type=['gpkg'], key='upload_area')
         if uploaded_area:
             processar_arquivo_carregado(uploaded_area, tipo='amostral')
@@ -360,18 +368,20 @@ def main():
         if uploaded_pontos:
             processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
 
-        # Botões de controle sempre visíveis
+        # Botões de desenho modificados
         if st.button("▶️ Área Amostral"):
-            st.session_state.modo_desenho = 'amostral'
+            st.session_state.drawing_mode = 'amostral'
             st.session_state.modo_insercao = None
             st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
-            st.experimental_rerun()
+            time.sleep(0.3)
+            st.rerun()
 
         if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
+            st.session_state.drawing_mode = 'total'
             st.session_state.modo_insercao = None
             st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
-            st.experimental_rerun()
+            time.sleep(0.3)
+            st.rerun()
 
         if st.button("✏️ Inserir pontos manualmente"):
             st.session_state.modo_insercao = 'manual'
@@ -404,26 +414,29 @@ def main():
         st.subheader("Produtividade")
         st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
 
-    with col2:
+   with col2:
         st.header("Mapa de visualização")
         mapa = create_map()
-        st.session_state.mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
-
-    # Captura o desenho feito
-    if st.session_state.get('mapa_data') and st.session_state.mapa_data.get('last_active_drawing'):
-        geometry = st.session_state.mapa_data['last_active_drawing']['geometry']
-        gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-
-        if st.session_state.modo_desenho == 'amostral':
-            st.session_state.gdf_poligono = gdf
-            st.success("Área amostral definida!")
-        elif st.session_state.modo_desenho == 'total':
-            st.session_state.gdf_poligono_total = gdf
-            st.success("Área total definida!")
-
-        # Limpa o estado para evitar reprocessamento
-        st.session_state.modo_desenho = None
-        st.experimental_rerun()
+        mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
+        
+        # Processamento do desenho
+        if mapa_data and mapa_data.get('last_active_drawing'):
+            geometry = mapa_data['last_active_drawing']['geometry']
+            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+            
+            if st.session_state.get('drawing_mode') == 'amostral':
+                st.session_state.gdf_poligono = gdf
+                st.session_state.drawing_mode = None
+                st.success("Área amostral definida!")
+                time.sleep(0.3)
+                st.rerun()
+                
+            elif st.session_state.get('drawing_mode') == 'total':
+                st.session_state.gdf_poligono_total = gdf
+                st.session_state.drawing_mode = None
+                st.success("Área total definida!")
+                time.sleep(0.3)
+                st.rerun()
 
 if __name__ == "__main__":
     main()
