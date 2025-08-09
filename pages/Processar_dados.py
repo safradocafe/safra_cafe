@@ -26,6 +26,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ✅ Inicialização do GEE
+# ✅ Inicialização do GEE
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
@@ -38,7 +39,7 @@ try:
         )
         ee.Initialize(credentials)
 except Exception as e:
-    st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
+    st.error(f"Erro ao inicializar o GEE: {str(e)}")
 
 # Função para carregar arquivos da nuvem do Streamlit
 def carregar_arquivos_da_nuvem():
