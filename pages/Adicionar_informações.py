@@ -415,6 +415,61 @@ def get_gps_location():
     coords = components.html(gps_code, height=0, width=0)
     return coords
 
+def voice_input():
+    voice_code = """
+    <script>
+    const sendVoice = () => {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("Este navegador não suporta reconhecimento de voz.");
+            return;
+        }
+        const recognition = new webkitSpeechRecognition();
+        recognition.lang = "pt-BR";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            window.parent.postMessage({isStreamlitMessage: true, type: "streamlit:setComponentValue", value: transcript}, "*");
+        };
+        recognition.onerror = function(event) {
+            alert('Erro no reconhecimento de voz: ' + event.error);
+        };
+        recognition.start();
+    };
+    </script>
+
+    <button onclick="sendVoice()">🎤 Falar agora</button>
+    """
+    text = components.html(voice_code, height=50)
+    return text
+
+st.write("Dite o valor de produtividade:")
+transcript = voice_input()
+if transcript:
+    st.write("Você disse:", transcript)
+
+if st.session_state.get('modo_insercao') == 'manual':
+    mapa = create_map_manual_points()
+else:
+    mapa = create_map()
+st.session_state.mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
+
+if st.session_state.get('modo_insercao') == 'manual':
+    if st.button("📍 Capturar localização via GPS"):
+        coords_json = get_gps_location()
+        if coords_json:
+            coords = json.loads(coords_json)
+            st.write(f"Latitude: {coords['lat']}, Longitude: {coords['lon']}")
+            # Aqui pode aparecer formulário para dados produtividade com coords
+
+    st.write("Ou use comando de voz para inserir dados:")
+    transcript = voice_input()
+    if transcript:
+        st.write("Você disse:", transcript)
+        # Fazer parse do texto para capturar valor + unidade
+
+
 def main():
     st.title("📋 Adicionar Informações")
 
