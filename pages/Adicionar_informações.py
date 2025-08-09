@@ -6,7 +6,6 @@ st.write("Insira dados da fazenda")
 import json
 import streamlit as st
 import geemap
-import ee
 import time
 import random
 import string
@@ -34,21 +33,6 @@ st.markdown("""
     header, footer {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
-
-# ✅ Inicialização do GEE
-try:
-    if "GEE_CREDENTIALS" not in st.secrets:
-        st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
-    else:
-        credentials_dict = dict(st.secrets["GEE_CREDENTIALS"])
-        credentials_json = json.dumps(credentials_dict)
-        credentials = ee.ServiceAccountCredentials(
-            email=credentials_dict["client_email"],
-            key_data=credentials_json
-        )
-        ee.Initialize(credentials)
-except Exception as e:
-    st.error(f"🚨 Erro ao inicializar o GEE: {str(e)}")
 
 # ✅ Inicialização do estado
 if 'gdf_poligono' not in st.session_state:
