@@ -49,7 +49,9 @@ from io import BytesIO
 import os
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import Draw
 import zipfile
+import streamlit.components.v1 as components
 
 # Configuração da página
 st.set_page_config(layout="wide")
@@ -144,6 +146,43 @@ def create_map():
                 fill=True,
                 fill_color="green",
                 fill_opacity=0.7,
+                popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']}"
+            ).add_to(m)
+
+    folium.LayerControl().add_to(m)
+    return m
+
+def create_map_manual_points():
+    m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
+
+    # Adicionar camada satélite
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri',
+        name='Satélite',
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # Plugin para desenhar pontos (só pontos)
+    draw = Draw(
+        draw_options={
+            'polyline': False,
+            'rectangle': False,
+            'circle': False,
+            'circlemarker': False,
+            'marker': True,
+            'polygon': False,
+        },
+        edit_options={'edit': False}
+    )
+    draw.add_to(m)
+
+    # Exibir pontos existentes, se houver
+    if st.session_state.gdf_pontos is not None:
+        for _, row in st.session_state.gdf_pontos.iterrows():
+            folium.Marker(
+                location=[row['latitude'], row['longitude']],
                 popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']}"
             ).add_to(m)
 
@@ -342,6 +381,39 @@ def inserir_produtividade():
         if st.button("Salvar alterações"):
             st.success("Dados de produtividade atualizados.")
             st.experimental_rerun()
+        if st.button("📍 Capturar localização via GPS"):
+    coords_json = get_gps_location()
+        if coords_json:
+            coords = json.loads(coords_json)
+            st.write(f"Latitude: {coords['lat']}, Longitude: {coords['lon']}")
+    
+def get_gps_location():
+    gps_code = """
+    <script>
+    const sendLocation = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const coords = {
+                        lat: position.coords.latitude,
+                        lon: position.coords.longitude
+                    };
+                    const coordsJson = JSON.stringify(coords);
+                    window.parent.postMessage({isStreamlitMessage: true, type: "streamlit:setComponentValue", value: coordsJson}, "*");
+                },
+                error => {
+                    alert("Erro ao obter localização: " + error.message);
+                }
+            );
+        } else {
+            alert("Geolocalização não suportada.");
+        }
+    };
+    sendLocation();
+    </script>
+    """
+    coords = components.html(gps_code, height=0, width=0)
+    return coords
 
 def main():
     st.title("📋 Adicionar Informações")
