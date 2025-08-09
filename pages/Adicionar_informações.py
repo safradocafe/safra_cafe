@@ -381,11 +381,13 @@ def inserir_produtividade():
         if st.button("Salvar alterações"):
             st.success("Dados de produtividade atualizados.")
             st.experimental_rerun()
+
         if st.button("📍 Capturar localização via GPS"):
-    coords_json = get_gps_location()
-        if coords_json:
-            coords = json.loads(coords_json)
-            st.write(f"Latitude: {coords['lat']}, Longitude: {coords['lon']}")
+            coords_json = get_gps_location()
+            if coords_json:
+                coords = json.loads(coords_json)
+                st.write(f"Latitude: {coords['lat']}, Longitude: {coords['lon']}")
+
     
 def get_gps_location():
     gps_code = """
