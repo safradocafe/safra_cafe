@@ -440,3 +440,42 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Função para salvar dados exportados no diretório temporário da nuvem Streamlit
+def salvar_no_streamlit_cloud():
+    if st.session_state.get("gdf_poligono") is None or \
+       st.session_state.get("gdf_poligono_total") is None or \
+       st.session_state.get("gdf_pontos") is None:
+        st.warning("⚠️ Certifique-se de que todas as áreas e pontos foram definidos!")
+        return
+
+    if st.session_state.get("densidade_plantas") is None or \
+       st.session_state.get("produtividade_media") is None:
+        st.warning("⚠️ Parâmetros de densidade e produtividade não definidos!")
+        return
+
+    # Diretório temporário na nuvem
+    temp_dir = "/tmp/streamlit_dados"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Salvar os arquivos individualmente
+    st.session_state.gdf_poligono.to_file(f"{temp_dir}/area_poligono.gpkg", driver="GPKG")
+    st.session_state.gdf_poligono_total.to_file(f"{temp_dir}/area_total_poligono.gpkg", driver="GPKG")
+    st.session_state.gdf_pontos.to_file(f"{temp_dir}/pontos_produtividade.gpkg", driver="GPKG")
+
+    parametros = {
+        'densidade_pes_ha': st.session_state.densidade_plantas,
+        'produtividade_media_sacas_ha': st.session_state.produtividade_media
+    }
+    with open(f"{temp_dir}/parametros_area.json", "w") as f:
+        json.dump(parametros, f)
+
+    st.success("✅ Arquivos salvos temporariamente na nuvem do Streamlit!")
+    st.info("➡️ Eles poderão ser carregados no próximo módulo do projeto.")
+
+    # Retornar o caminho temporário para reuso (opcional)
+    return temp_dir
+
+# Se necessário, criar botão para executar
+if st.button("☁️ Salvar dados na nuvem"):
+    salvar_no_streamlit_cloud()
