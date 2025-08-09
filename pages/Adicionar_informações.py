@@ -36,7 +36,6 @@ Após inserir **todos os dados**, clique em **"Salvar dados"**.
 """)
 
 import json
-import streamlit as st
 import geemap
 import time
 import random
@@ -52,7 +51,7 @@ from streamlit_folium import st_folium
 from folium.plugins import Draw
 import zipfile
 import streamlit.components.v1 as components
-
+import tempfile
 # Configuração da página
 st.set_page_config(layout="wide")
 st.markdown("""
@@ -282,20 +281,29 @@ def exportar_dados():
         }
         zipf.writestr('parametros_area.json', json.dumps(parametros))
 
+        # Área amostral
         if st.session_state.gdf_poligono is not None:
-            poligono_buffer = BytesIO()
-            st.session_state.gdf_poligono.to_file(poligono_buffer, driver='GPKG')
-            zipf.writestr('area_poligono.gpkg', poligono_buffer.getvalue())
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path = os.path.join(tmpdir, 'area_poligono.gpkg')
+                st.session_state.gdf_poligono.to_file(path, driver='GPKG')
+                with open(path, 'rb') as f:
+                    zipf.writestr('area_poligono.gpkg', f.read())
 
+        # Área total
         if st.session_state.gdf_poligono_total is not None:
-            poligono_total_buffer = BytesIO()
-            st.session_state.gdf_poligono_total.to_file(poligono_total_buffer, driver='GPKG')
-            zipf.writestr('area_total_poligono.gpkg', poligono_total_buffer.getvalue())
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path = os.path.join(tmpdir, 'area_total_poligono.gpkg')
+                st.session_state.gdf_poligono_total.to_file(path, driver='GPKG')
+                with open(path, 'rb') as f:
+                    zipf.writestr('area_total_poligono.gpkg', f.read())
 
+        # Pontos de produtividade
         if st.session_state.gdf_pontos is not None:
-            pontos_buffer = BytesIO()
-            st.session_state.gdf_pontos.to_file(pontos_buffer, driver='GPKG')
-            zipf.writestr('pontos_produtividade.gpkg', pontos_buffer.getvalue())
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path = os.path.join(tmpdir, 'pontos_produtividade.gpkg')
+                st.session_state.gdf_pontos.to_file(path, driver='GPKG')
+                with open(path, 'rb') as f:
+                    zipf.writestr('pontos_produtividade.gpkg', f.read())
 
     st.download_button(
         label="💾 Exportar dados (ZIP)",
@@ -377,7 +385,8 @@ def inserir_produtividade():
             st.session_state.gdf_pontos.at[idx, 'unidade'] = nova_unidade
             st.session_state.gdf_pontos.at[idx, 'coletado'] = coletado
             st.session_state.gdf_pontos.at[idx, 'maduro_kg'] = converter_para_kg(novo_valor, nova_unidade)
-        
+
+        # Botões ficam aqui, fora do for
         if st.button("Salvar alterações"):
             st.success("Dados de produtividade atualizados.")
             st.experimental_rerun()
