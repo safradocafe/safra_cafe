@@ -37,6 +37,129 @@ for key in ['gdf_poligono', 'gdf_pontos', 'gdf_poligono_total', 'unidade_selecio
         else:
             st.session_state[key] = None
 
+
+def main():
+    st.title("📋 Adicionar Informações")
+
+    st.markdown("""
+    ### 1️⃣ Área Amostral
+    - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
+    - **Opção 2:** Desenhe diretamente no mapa:
+        1. Clique em **"Área amostral"**.
+        2. Clique no ícone de **pentágono** no mapa.
+        3. Desenhe a áera total seguindo o mesmo procedimento
+        4. Para reiniciar o desenho, clique em **"Apagar"**.
+    """)
+
+    st.markdown("""
+    ### 2️⃣ Dados de Produtividade
+    - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
+    - **Opção 2:** Insira manualmente no mapa.
+    - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
+    """)
+
+    st.warning("""
+    ⚠️ **Atenção:**  
+    O sistema funciona apenas com **2 pontos por hectare**, valor mínimo recomendado por pesquisas científicas para a Cafeicultura de Precisão.
+    """)
+
+    st.info("""
+    ℹ️ **Observação:**  
+    Os valores de produtividade podem ser inseridos em **Latas**, **Litros** ou **Quilos (Kg)**.  
+    Se forem inseridos em *Latas* ou *Litros*, o sistema converte automaticamente para **Kg**, conforme a literatura científica.
+    """)
+
+    st.markdown("""
+    ### 3️⃣ Finalizar
+    Após inserir **todos os dados**, clique em **"Salvar dados"**.
+    """)
+
+    if st.session_state.get('modo_insercao') == 'manual':
+        inserir_ponto_manual()
+        return
+
+    col1, col2 = st.columns([1, 3])
+
+    with col1:
+        st.header("Controles")
+
+        # Uploads
+        uploaded_area = st.file_uploader("1. Área Amostral (.gpkg)", type=['gpkg'], key='upload_area')
+        if uploaded_area:
+            processar_arquivo_carregado(uploaded_area, tipo='amostral')
+
+        uploaded_pontos = st.file_uploader("2. Pontos de Produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
+        if uploaded_pontos:
+            processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
+
+        # Botões de controle sempre visíveis
+        if st.button("▶️ Área Amostral"):
+            st.session_state.modo_desenho = 'amostral'
+            st.session_state.modo_insercao = None
+            st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
+            st.experimental_rerun()
+
+        if st.button("▶️ Área Total"):
+            st.session_state.modo_desenho = 'total'
+            st.session_state.modo_insercao = None
+            st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
+            st.experimental_rerun()
+
+        if st.button("✏️ Inserir pontos manualmente"):
+            st.session_state.modo_insercao = 'manual'
+
+        if st.button("📝 Inserir produtividade"):
+            inserir_produtividade()
+
+        if st.button("💾 Salvar pontos"):
+            salvar_pontos()
+
+        if st.button("💾 Exportar dados"):
+            exportar_dados()
+
+        if st.button("🗑️ Limpar Área"):
+            st.session_state.gdf_poligono = None
+            st.session_state.gdf_poligono_total = None
+            st.session_state.gdf_pontos = None
+            st.success("Áreas limpas!")
+
+        # Dados da área amostral
+        st.subheader("Dados da área amostral")
+        st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
+        st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
+
+        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
+            if st.session_state.gdf_poligono is not None:
+                gerar_pontos_automaticos()
+
+        # Unidade de produtividade
+        st.subheader("Produtividade")
+        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
+
+    with col2:
+        st.header("Mapa de visualização")
+        mapa = create_map()
+        st.session_state.mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
+
+    # Captura o desenho feito
+    if st.session_state.get('mapa_data') and st.session_state.mapa_data.get('last_active_drawing'):
+        geometry = st.session_state.mapa_data['last_active_drawing']['geometry']
+        gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+
+        if st.session_state.modo_desenho == 'amostral':
+            st.session_state.gdf_poligono = gdf
+            st.success("Área amostral definida!")
+        elif st.session_state.modo_desenho == 'total':
+            st.session_state.gdf_poligono_total = gdf
+            st.success("Área total definida!")
+
+        # Limpa o estado para evitar reprocessamento
+        st.session_state.modo_desenho = None
+        st.experimental_rerun()
+
+if __name__ == "__main__":
+    main()
+
 # Funções auxiliares
 def gerar_codigo():
     letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
@@ -390,40 +513,6 @@ def get_gps_location():
     coords = components.html(gps_code, height=0, width=0)
     return coords
 
-def voice_input():
-    voice_code = """
-    <script>
-    const sendVoice = () => {
-        if (!('webkitSpeechRecognition' in window)) {
-            alert("Este navegador não suporta reconhecimento de voz.");
-            return;
-        }
-        const recognition = new webkitSpeechRecognition();
-        recognition.lang = "pt-BR";
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-
-        recognition.onresult = function(event) {
-            const transcript = event.results[0][0].transcript;
-            window.parent.postMessage({isStreamlitMessage: true, type: "streamlit:setComponentValue", value: transcript}, "*");
-        };
-        recognition.onerror = function(event) {
-            alert('Erro no reconhecimento de voz: ' + event.error);
-        };
-        recognition.start();
-    };
-    </script>
-
-    <button onclick="sendVoice()">🎤 Falar agora</button>
-    """
-    text = components.html(voice_code, height=50)
-    return text
-
-st.write("Dite o valor de produtividade:")
-transcript = voice_input()
-if transcript:
-    st.write("Você disse:", transcript)
-
 if st.session_state.get('modo_insercao') == 'manual':
     mapa = create_map_manual_points()
 else:
@@ -445,125 +534,4 @@ if st.session_state.get('modo_insercao') == 'manual':
         # Fazer parse do texto para capturar valor + unidade
 
 
-def main():
-    st.title("📋 Adicionar Informações")
-
-    st.markdown("""
-    ### 1️⃣ Área Amostral
-    - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
-    - **Opção 2:** Desenhe diretamente no mapa:
-        1. Clique em **"Área amostral"**.
-        2. Clique no ícone de **pentágono** no mapa.
-        3. Desenhe a áera total seguindo o mesmo procedimento
-        4. Para reiniciar o desenho, clique em **"Apagar"**.
-    """)
-
-    st.markdown("""
-    ### 2️⃣ Dados de Produtividade
-    - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
-    - **Opção 2:** Insira manualmente no mapa.
-    - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
-    """)
-
-    st.warning("""
-    ⚠️ **Atenção:**  
-    O sistema funciona apenas com **2 pontos por hectare**, valor mínimo recomendado por pesquisas científicas para a Cafeicultura de Precisão.
-    """)
-
-    st.info("""
-    ℹ️ **Observação:**  
-    Os valores de produtividade podem ser inseridos em **Latas**, **Litros** ou **Quilos (Kg)**.  
-    Se forem inseridos em *Latas* ou *Litros*, o sistema converte automaticamente para **Kg**, conforme a literatura científica.
-    """)
-
-    st.markdown("""
-    ### 3️⃣ Finalizar
-    Após inserir **todos os dados**, clique em **"Salvar dados"**.
-    """)
-
-    if st.session_state.get('modo_insercao') == 'manual':
-        inserir_ponto_manual()
-        return
-
-    col1, col2 = st.columns([1, 3])
-
-    with col1:
-        st.header("Controles")
-
-        # Uploads
-        uploaded_area = st.file_uploader("1. Área Amostral (.gpkg)", type=['gpkg'], key='upload_area')
-        if uploaded_area:
-            processar_arquivo_carregado(uploaded_area, tipo='amostral')
-
-        uploaded_pontos = st.file_uploader("2. Pontos de Produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
-        if uploaded_pontos:
-            processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
-
-        # Botões de controle sempre visíveis
-        if st.button("▶️ Área Amostral"):
-            st.session_state.modo_desenho = 'amostral'
-            st.session_state.modo_insercao = None
-            st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
-            st.experimental_rerun()
-
-        if st.button("▶️ Área Total"):
-            st.session_state.modo_desenho = 'total'
-            st.session_state.modo_insercao = None
-            st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
-            st.experimental_rerun()
-
-        if st.button("✏️ Inserir pontos manualmente"):
-            st.session_state.modo_insercao = 'manual'
-
-        if st.button("📝 Inserir produtividade"):
-            inserir_produtividade()
-
-        if st.button("💾 Salvar pontos"):
-            salvar_pontos()
-
-        if st.button("💾 Exportar dados"):
-            exportar_dados()
-
-        if st.button("🗑️ Limpar Área"):
-            st.session_state.gdf_poligono = None
-            st.session_state.gdf_poligono_total = None
-            st.session_state.gdf_pontos = None
-            st.success("Áreas limpas!")
-
-        # Dados da área amostral
-        st.subheader("Dados da área amostral")
-        st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
-        st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
-
-        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
-            if st.session_state.gdf_poligono is not None:
-                gerar_pontos_automaticos()
-
-        # Unidade de produtividade
-        st.subheader("Produtividade")
-        st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
-
-    with col2:
-        st.header("Mapa de visualização")
-        mapa = create_map()
-        st.session_state.mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
-
-    # Captura o desenho feito
-    if st.session_state.get('mapa_data') and st.session_state.mapa_data.get('last_active_drawing'):
-        geometry = st.session_state.mapa_data['last_active_drawing']['geometry']
-        gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-
-        if st.session_state.modo_desenho == 'amostral':
-            st.session_state.gdf_poligono = gdf
-            st.success("Área amostral definida!")
-        elif st.session_state.modo_desenho == 'total':
-            st.session_state.gdf_poligono_total = gdf
-            st.success("Área total definida!")
-
-        # Limpa o estado para evitar reprocessamento
-        st.session_state.modo_desenho = None
-        st.experimental_rerun()
-
-if __name__ == "__main__":
-    main()
 
