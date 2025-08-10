@@ -7,21 +7,36 @@ st.set_page_config(
 )
 
 st.title("☕ Safra do Café")
-st.markdown("""
-Sistema avançado de previsão da produtividade do café com imagens de satélite (MSI/Sentinel-2A) e algoritmos de Machine Learning.
-""")
-st.markdown("## *Acesse o sistema pelas barras laterais*")  # Corrigido: st.markdown em vez de st.title
+    st.markdown("""
+    ### 1️⃣ Área Amostral
+    - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
+    - **Opção 2:** Desenhe diretamente no mapa:
+        1. Clique em **"Área amostral"**.
+        2. Clique no ícone de **pentágono** no mapa.
+        3. Desenhe a áera total seguindo o mesmo procedimento
+        4. Para reiniciar o desenho, clique em **"Apagar"**.
+    """)
 
-# Carregando as imagens
-img1 = Image.open(r"D:\Arquivos_R\sr\sr_cafe\Santa_Vera\teste app\indices_capa.jpeg")
-img2 = Image.open(r"D:\Arquivos_R\sr\sr_cafe\Santa_Vera\teste app\img_capa_prod.jpeg")
+    st.markdown("""
+    ### 2️⃣ Dados de Produtividade
+    - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
+    - **Opção 2:** Insira manualmente no mapa.
+    - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
+    """)
 
-# Criando duas colunas para as imagens
-col1, col2 = st.columns(2)
+    st.warning("""
+    ⚠️ **Atenção:**  
+    O sistema funciona apenas com **2 pontos por hectare**, valor mínimo recomendado por pesquisas científicas para a Cafeicultura de Precisão.
+    """)
 
-with col1:
-    st.image(img1, caption="Combinamos índices espectrais e Machine Learning para...", use_column_width=True)
+    st.info("""
+    ℹ️ **Observação:**  
+    Os valores de produtividade podem ser inseridos em **Latas**, **Litros** ou **Quilos (Kg)**.  
+    Se forem inseridos em *Latas* ou *Litros*, o sistema converte automaticamente para **Kg**, conforme a literatura científica.
+    """)
 
-with col2:
-    st.image(img2, caption="... gerar o seu mapa de produtividade", use_column_width=True)
+    st.markdown("""
+    ### 3️⃣ Finalizar
+    Após inserir **todos os dados**, clique em **"Salvar dados"**.
+    """)
 
