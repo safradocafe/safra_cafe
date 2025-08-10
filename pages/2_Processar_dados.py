@@ -12,21 +12,11 @@ import os
 st.set_page_config(layout="wide")
 st.title("Processamento dos dados")
 st.title("Seleção das imagens do sensor MSI/Sentinel-2A, cálculo dos índices espectrais e criação do banco de dados")
-st.markdown("""
-    <style>
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
-# Funções auxiliares
-if verificar_resultados_salvos():
-    gdf_resultado, parametros = carregar_resultados_da_nuvem()
-    # Processar os dados carregados
-else:
-    st.warning("Nenhum resultado encontrado. Execute primeiro a análise na página anterior.")
+# 1. Primeiro definimos todas as funções auxiliares
+def verificar_resultados_salvos():
+    """Verifica se existem resultados salvos na sessão."""
+    return 'gdf_resultado' in st.session_state and 'parametros_analise' in st.session_state
 
 def carregar_resultados_da_nuvem():
     """Carrega resultados previamente salvos na sessão."""
@@ -55,25 +45,7 @@ def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
         st.error(f"❌ Erro ao salvar resultados: {str(e)}")
         return False
 
-def carregar_arquivos_da_nuvem():
-    """Carrega arquivos salvos na nuvem do Streamlit."""
-    temp_dir = "/tmp/streamlit_dados"
-    try:
-        # Carregar parâmetros
-        with open(f"{temp_dir}/parametros_area.json", "r") as f:
-            parametros = json.load(f)
-        
-        # Carregar polígonos e pontos
-        gdf_poligono = gpd.read_file(f"{temp_dir}/area_poligono.gpkg")
-        gdf_poligono_total = gpd.read_file(f"{temp_dir}/area_total_poligono.gpkg")
-        gdf_pontos = gpd.read_file(f"{temp_dir}/pontos_produtividade.gpkg")
-        
-        return gdf_poligono, gdf_poligono_total, gdf_pontos, parametros
-    except Exception as e:
-        st.error(f"Erro ao carregar arquivos da nuvem: {str(e)}")
-        return None, None, None, None
-
-# ✅ Inicialização do GEE
+# 2. Depois inicializamos o GEE
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
@@ -89,6 +61,10 @@ except Exception as e:
     st.error(f"Erro ao inicializar o GEE: {str(e)}")
     st.stop()
 
+# 3. Agora podemos verificar resultados salvos
+if verificar_resultados_salvos():
+    gdf_resultado, parametros = carregar_resultados_da_nuvem()
+    st.success("Resultados carregados da sessão!")
 # Barra lateral - Gerenciamento de resultados
 st.sidebar.header("Gerenciamento de resultados")
 if st.sidebar.button("↩️ Carregar resultados existentes"):
