@@ -2,14 +2,14 @@ import streamlit as st
 from PIL import Image
 
 st.set_page_config(
-    page_title="Safra do Café",
+    page_title="Safra do café",
     layout="wide"
 )
 
-st.title("☕ Safra do Café - Sistema avançado de previsão da produtividade do café")
+st.title("☕ Safra do café - Sistema avançado de previsão da produtividade")
 
 st.markdown("""
-**Este é um protótipo de geotecnologia para previsão da produtividade do café** com o uso de imagens de 
+Este é um protótipo de **geotecnologia para previsão da produtividade do café** com o uso de imagens de 
 satélite (sensor MSI/Sentinel-2A) e algoritmos de Machine Learning, sendo este trabalho resultado de 
 pesquisa acadêmica de Mestrado Profissional em Agricultura de Precisão pelo Colégio Politécnico da 
 Universidade Federal de Santa Maria (UFSM), de autoria de **Rozymario Bittencourt Fagundes (MSc)**. O sistema utiliza técnicas
