@@ -2,40 +2,28 @@ import streamlit as st
 from PIL import Image
 
 st.set_page_config(
-    page_title="Safra do café",
+    page_title="Safra do Café",
     layout="wide"
 )
 
-st.title("☕ Safra do café")
+st.title("☕ Safra do Café - Sistema avançado de previsão da produtividade do café")
+
 st.markdown("""
-### 1️⃣ Área Amostral
-- **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
-- **Opção 2:** Desenhe diretamente no mapa:
-    1. Clique em **"Área amostral"**.
-    2. Clique no ícone de **pentágono** no mapa.
-    3. Desenhe a áera total seguindo o mesmo procedimento
-    4. Para reiniciar o desenho, clique em **"Apagar"**.
+**Este é um protótipo de geotecnologia para previsão da produtividade do café** com o uso de imagens de 
+satélite (sensor MSI/Sentinel-2A) e algoritmos de Machine Learning, sendo este trabalho resultado de 
+pesquisa acadêmica de Mestrado Profissional em Agricultura de Precisão pelo Colégio Politécnico da 
+Universidade Federal de Santa Maria (UFSM), de autoria de Rozymario Bittencourt Fagundes (MSc). O sistema utiliza técnicas
+de Cafeicultura de Precisão para gerar mapas da variabilidade espacial da produtividade e identificar zonas de manejo". 
 """)
 
 st.markdown("""
-### 2️⃣ Dados de Produtividade
-- **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
-- **Opção 2:** Insira manualmente no mapa.
-- Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
-""")
-
-st.warning("""
-⚠️ **Atenção:**  
-O sistema funciona apenas com **2 pontos por hectare**, valor mínimo recomendado por pesquisas científicas para a Cafeicultura de Precisão.
+**Para executar o sistema:**  
+Navegue pelas páginas laterais (menu à esquerda) e siga as instruções em cada seção.
 """)
 
 st.info("""
-ℹ️ **Observação:**  
-Os valores de produtividade podem ser inseridos em **Latas**, **Litros** ou **Quilos (Kg)**.  
-Se forem inseridos em *Latas* ou *Litros*, o sistema converte automaticamente para **Kg**, conforme a literatura científica.
-""")
-
-st.markdown("""
-### 3️⃣ Finalizar
-Após inserir **todos os dados**, clique em **"Salvar dados"**.
+ℹ️ **Sobre o sistema:**  
+O protótipo utiliza técnicas de agricultura de precisão e processamento de imagens de satélite para 
+estimar a produtividade em lavouras de café, com validação científica conforme metodologia desenvolvida 
+na pesquisa.
 """)
