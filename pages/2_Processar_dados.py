@@ -12,57 +12,75 @@ import os
 st.set_page_config(layout="wide")
 st.title("Processamento dos dados")
 st.title("Seleção das imagens do sensor MSI/Sentinel-2A, cálculo dos índices espectrais e criação do banco de dados")
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# 1. Primeiro definimos todas as funções auxiliares
+# Funções auxiliares
 def verificar_resultados_salvos():
-    """Verifica se existem resultados salvos na sessão."""
-    return 'gdf_resultado' in st.session_state and 'parametros_analise' in st.session_state
+    """Verifica se existem resultados salvos na nuvem."""
+    temp_dir = "/tmp/streamlit_dados"
+    return os.path.exists(f"{temp_dir}/resultados_analise.gpkg")
 
-def carregar_arquivos_da_nuvem():
-    """Carrega arquivos salvos na sessão do Streamlit."""
+def carregar_resultados_da_nuvem():
+    """Carrega resultados previamente salvos na nuvem."""
+    temp_dir = "/tmp/streamlit_dados"
     try:
-        # Verifica se os arquivos estão na sessão
-        if ('gdf_poligono' in st.session_state and 
-            'gdf_poligono_total' in st.session_state and 
-            'gdf_pontos' in st.session_state and 
-            'parametros_area' in st.session_state):
-            
-            return (
-                st.session_state['gdf_poligono'],
-                st.session_state['gdf_poligono_total'],
-                st.session_state['gdf_pontos'],
-                st.session_state['parametros_area']
-            )
-        else:
-            st.warning("Nenhum dado encontrado na sessão. Execute primeiro o código de processamento.")
-            return None, None, None, None
+        gdf_resultado = gpd.read_file(f"{temp_dir}/resultados_analise.gpkg")
+        with open(f"{temp_dir}/parametros_analise.json", "r") as f:
+            parametros_analise = json.load(f)
+        return gdf_resultado, parametros_analise
     except Exception as e:
-        st.error(f"Erro ao carregar arquivos: {str(e)}")
-        return None, None, None, None
+        st.error(f"Erro ao carregar resultados: {str(e)}")
+        return None, None
 
-def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise, gdf_poligono=None, gdf_poligono_total=None, gdf_pontos=None, parametros_area=None):
-    """Salva os resultados na sessão do Streamlit para uso posterior."""
+def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
+    """Salva os resultados da análise na nuvem do Streamlit para uso posterior."""
+    temp_dir = "/tmp/streamlit_dados"
+    os.makedirs(temp_dir, exist_ok=True)
+    
     try:
-        # Salvar na sessão
-        st.session_state['gdf_resultado'] = gdf_resultado
-        st.session_state['parametros_analise'] = parametros_analise
+        # Salvar GeoDataFrame com os resultados
+        gdf_resultado.to_file(f"{temp_dir}/resultados_analise.gpkg", driver="GPKG")
         
-        if gdf_poligono is not None:
-            st.session_state['gdf_poligono'] = gdf_poligono
-        if gdf_poligono_total is not None:
-            st.session_state['gdf_poligono_total'] = gdf_poligono_total
-        if gdf_pontos is not None:
-            st.session_state['gdf_pontos'] = gdf_pontos
-        if parametros_area is not None:
-            st.session_state['parametros_area'] = parametros_area
+        # Salvar parâmetros da análise como JSON
+        with open(f"{temp_dir}/parametros_analise.json", "w") as f:
+            json.dump(parametros_analise, f)
             
-        st.success("✅ Resultados salvos com sucesso!")
+        # Salvar também como CSV (sem geometria)
+        df_resultado = pd.DataFrame(gdf_resultado.drop(columns='geometry'))
+        df_resultado.to_csv(f"{temp_dir}/resultados_analise.csv", index=False)
+        
+        st.success("✅ Resultados salvos na nuvem com sucesso!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao salvar resultados: {str(e)}")
+        st.error(f"❌ Erro ao salvar resultados na nuvem: {str(e)}")
         return False
+
+def carregar_arquivos_da_nuvem():
+    """Carrega arquivos salvos na nuvem do Streamlit."""
+    temp_dir = "/tmp/streamlit_dados"
+    try:
+        # Carregar parâmetros
+        with open(f"{temp_dir}/parametros_area.json", "r") as f:
+            parametros = json.load(f)
         
-# 2. Depois inicializamos o GEE
+        # Carregar polígonos e pontos
+        gdf_poligono = gpd.read_file(f"{temp_dir}/area_poligono.gpkg")
+        gdf_poligono_total = gpd.read_file(f"{temp_dir}/area_total_poligono.gpkg")
+        gdf_pontos = gpd.read_file(f"{temp_dir}/pontos_produtividade.gpkg")
+        
+        return gdf_poligono, gdf_poligono_total, gdf_pontos, parametros
+    except Exception as e:
+        st.error(f"Erro ao carregar arquivos da nuvem: {str(e)}")
+        return None, None, None, None
+
+# ✅ Inicialização do GEE
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
         st.error("❌ Credenciais do GEE não encontradas em secrets.toml!")
@@ -77,11 +95,6 @@ try:
 except Exception as e:
     st.error(f"Erro ao inicializar o GEE: {str(e)}")
     st.stop()
-
-# 3. Agora podemos verificar resultados salvos
-if verificar_resultados_salvos():
-    gdf_resultado, parametros = carregar_resultados_da_nuvem()
-    st.success("Resultados carregados da sessão!")
 
 # Barra lateral - Gerenciamento de resultados
 st.sidebar.header("Gerenciamento de resultados")
@@ -289,7 +302,7 @@ if st.sidebar.button("▶️ Executar análise"):
             if 'maduro_kg' in gdf_pontos.columns:
                 gdf_resultado['maduro_kg'] = gdf_pontos['maduro_kg'].values
 
-            # Mostrar resultados
+  # Mostrar resultados
             st.subheader("Resultados da análise")
             df_sem_geometria = gdf_resultado.drop(columns=['geometry'] if 'geometry' in gdf_resultado.columns else [])
             st.dataframe(df_sem_geometria)
@@ -312,17 +325,10 @@ if st.sidebar.button("▶️ Executar análise"):
                 "num_pontos_analisados": len(gdf_resultado)
             }
             
-            if st.button("💾 Salvar resultados na nuvem"):
-                if salvar_resultados_na_nuvem(
-                    gdf_resultado, 
-                    parametros_analise,
-                    gdf_poligono,
-                    gdf_poligono_total if 'gdf_poligono_total' in locals() else None,
-                    gdf_pontos,
-                    parametros if 'parametros' in locals() else None
-                ):
+            if st.button("💾 Salvar Resultados na Nuvem"):
+                if salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
+                    st.success("Dados salvos com sucesso!")
                     st.session_state['resultados_salvos'] = True
-                    st.experimental_rerun()
 
         except Exception as e:
             st.error(f"Erro durante o processamento: {str(e)}")
