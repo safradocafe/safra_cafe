@@ -22,44 +22,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Funções auxiliares
-def verificar_resultados_salvos():
-    """Verifica se existem resultados salvos na nuvem."""
-    temp_dir = "/tmp/streamlit_dados"
-    return os.path.exists(f"{temp_dir}/resultados_analise.gpkg")
+if verificar_resultados_salvos():
+    gdf_resultado, parametros = carregar_resultados_da_nuvem()
+    # Processar os dados carregados
+else:
+    st.warning("Nenhum resultado encontrado. Execute primeiro a análise na página anterior.")
 
 def carregar_resultados_da_nuvem():
-    """Carrega resultados previamente salvos na nuvem."""
-    temp_dir = "/tmp/streamlit_dados"
+    """Carrega resultados previamente salvos na sessão."""
     try:
-        gdf_resultado = gpd.read_file(f"{temp_dir}/resultados_analise.gpkg")
-        with open(f"{temp_dir}/parametros_analise.json", "r") as f:
-            parametros_analise = json.load(f)
-        return gdf_resultado, parametros_analise
+        return st.session_state['gdf_resultado'], st.session_state['parametros_analise']
     except Exception as e:
         st.error(f"Erro ao carregar resultados: {str(e)}")
         return None, None
 
 def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
-    """Salva os resultados da análise na nuvem do Streamlit para uso posterior."""
-    temp_dir = "/tmp/streamlit_dados"
-    os.makedirs(temp_dir, exist_ok=True)
-    
+    """Salva os resultados na sessão do Streamlit para uso posterior."""
     try:
-        # Salvar GeoDataFrame com os resultados
-        gdf_resultado.to_file(f"{temp_dir}/resultados_analise.gpkg", driver="GPKG")
+        # Salvar na sessão
+        st.session_state['gdf_resultado'] = gdf_resultado
+        st.session_state['parametros_analise'] = parametros_analise
         
-        # Salvar parâmetros da análise como JSON
+        # Também salvar em arquivo temporário para persistência entre execuções
+        temp_dir = tempfile.mkdtemp()
+        gdf_resultado.to_file(f"{temp_dir}/resultados_analise.gpkg", driver="GPKG")
         with open(f"{temp_dir}/parametros_analise.json", "w") as f:
             json.dump(parametros_analise, f)
             
-        # Salvar também como CSV (sem geometria)
-        df_resultado = pd.DataFrame(gdf_resultado.drop(columns='geometry'))
-        df_resultado.to_csv(f"{temp_dir}/resultados_analise.csv", index=False)
-        
-        st.success("✅ Resultados salvos na nuvem com sucesso!")
+        st.success("✅ Resultados salvos com sucesso!")
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao salvar resultados na nuvem: {str(e)}")
+        st.error(f"❌ Erro ao salvar resultados: {str(e)}")
         return False
 
 def carregar_arquivos_da_nuvem():
@@ -325,10 +318,10 @@ if st.sidebar.button("▶️ Executar análise"):
                 "num_pontos_analisados": len(gdf_resultado)
             }
             
-            if st.button("💾 Salvar Resultados na Nuvem"):
+            if st.button("💾 Salvar resultados na nuvem"):
                 if salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
-                    st.success("Dados salvos com sucesso!")
                     st.session_state['resultados_salvos'] = True
+                    st.experimental_rerun()
 
         except Exception as e:
             st.error(f"Erro durante o processamento: {str(e)}")
