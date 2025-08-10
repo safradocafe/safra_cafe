@@ -18,33 +18,51 @@ def verificar_resultados_salvos():
     """Verifica se existem resultados salvos na sessão."""
     return 'gdf_resultado' in st.session_state and 'parametros_analise' in st.session_state
 
-def carregar_resultados_da_nuvem():
-    """Carrega resultados previamente salvos na sessão."""
+# Adicione esta função junto com as outras funções auxiliares no início do código
+def carregar_arquivos_da_nuvem():
+    """Carrega arquivos salvos na sessão do Streamlit."""
     try:
-        return st.session_state['gdf_resultado'], st.session_state['parametros_analise']
+        # Verifica se os arquivos estão na sessão
+        if ('gdf_poligono' in st.session_state and 
+            'gdf_poligono_total' in st.session_state and 
+            'gdf_pontos' in st.session_state and 
+            'parametros_area' in st.session_state):
+            
+            return (
+                st.session_state['gdf_poligono'],
+                st.session_state['gdf_poligono_total'],
+                st.session_state['gdf_pontos'],
+                st.session_state['parametros_area']
+            )
+        else:
+            st.warning("Nenhum dado encontrado na sessão. Execute primeiro o código de processamento.")
+            return None, None, None, None
     except Exception as e:
-        st.error(f"Erro ao carregar resultados: {str(e)}")
-        return None, None
+        st.error(f"Erro ao carregar arquivos: {str(e)}")
+        return None, None, None, None
 
-def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
+def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise, gdf_poligono=None, gdf_poligono_total=None, gdf_pontos=None, parametros_area=None):
     """Salva os resultados na sessão do Streamlit para uso posterior."""
     try:
         # Salvar na sessão
         st.session_state['gdf_resultado'] = gdf_resultado
         st.session_state['parametros_analise'] = parametros_analise
         
-        # Também salvar em arquivo temporário para persistência entre execuções
-        temp_dir = tempfile.mkdtemp()
-        gdf_resultado.to_file(f"{temp_dir}/resultados_analise.gpkg", driver="GPKG")
-        with open(f"{temp_dir}/parametros_analise.json", "w") as f:
-            json.dump(parametros_analise, f)
+        if gdf_poligono is not None:
+            st.session_state['gdf_poligono'] = gdf_poligono
+        if gdf_poligono_total is not None:
+            st.session_state['gdf_poligono_total'] = gdf_poligono_total
+        if gdf_pontos is not None:
+            st.session_state['gdf_pontos'] = gdf_pontos
+        if parametros_area is not None:
+            st.session_state['parametros_area'] = parametros_area
             
         st.success("✅ Resultados salvos com sucesso!")
         return True
     except Exception as e:
         st.error(f"❌ Erro ao salvar resultados: {str(e)}")
         return False
-
+        
 # 2. Depois inicializamos o GEE
 try:
     if "GEE_CREDENTIALS" not in st.secrets:
@@ -294,8 +312,15 @@ if st.sidebar.button("▶️ Executar análise"):
                 "num_pontos_analisados": len(gdf_resultado)
             }
             
-            if st.button("💾 Salvar resultados na nuvem"):
-                if salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
+           if st.button("💾 Salvar resultados na nuvem"):
+                if salvar_resultados_na_nuvem(
+                    gdf_resultado, 
+                    parametros_analise,
+                    gdf_poligono,
+                    gdf_poligono_total if 'gdf_poligono_total' in locals() else None,
+                    gdf_pontos,
+                    parametros if 'parametros' in locals() else None
+                ):
                     st.session_state['resultados_salvos'] = True
                     st.experimental_rerun()
 
