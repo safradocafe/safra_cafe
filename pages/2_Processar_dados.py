@@ -18,7 +18,6 @@ def verificar_resultados_salvos():
     """Verifica se existem resultados salvos na sessão."""
     return 'gdf_resultado' in st.session_state and 'parametros_analise' in st.session_state
 
-# Adicione esta função junto com as outras funções auxiliares no início do código
 def carregar_arquivos_da_nuvem():
     """Carrega arquivos salvos na sessão do Streamlit."""
     try:
@@ -83,6 +82,7 @@ except Exception as e:
 if verificar_resultados_salvos():
     gdf_resultado, parametros = carregar_resultados_da_nuvem()
     st.success("Resultados carregados da sessão!")
+
 # Barra lateral - Gerenciamento de resultados
 st.sidebar.header("Gerenciamento de resultados")
 if st.sidebar.button("↩️ Carregar resultados existentes"):
@@ -289,7 +289,7 @@ if st.sidebar.button("▶️ Executar análise"):
             if 'maduro_kg' in gdf_pontos.columns:
                 gdf_resultado['maduro_kg'] = gdf_pontos['maduro_kg'].values
 
-  # Mostrar resultados
+            # Mostrar resultados
             st.subheader("Resultados da análise")
             df_sem_geometria = gdf_resultado.drop(columns=['geometry'] if 'geometry' in gdf_resultado.columns else [])
             st.dataframe(df_sem_geometria)
@@ -312,7 +312,7 @@ if st.sidebar.button("▶️ Executar análise"):
                 "num_pontos_analisados": len(gdf_resultado)
             }
             
-           if st.button("💾 Salvar resultados na nuvem"):
+            if st.button("💾 Salvar resultados na nuvem"):
                 if salvar_resultados_na_nuvem(
                     gdf_resultado, 
                     parametros_analise,
@@ -326,4 +326,3 @@ if st.sidebar.button("▶️ Executar análise"):
 
         except Exception as e:
             st.error(f"Erro durante o processamento: {str(e)}")
-
