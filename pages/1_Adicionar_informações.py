@@ -14,6 +14,16 @@ import folium
 from streamlit_folium import st_folium
 import zipfile
 
+
+st.set_page_config(layout="wide", initial_sidebar_state="expanded")
+st.markdown("""
+    <style>
+    .st-emotion-cache-1v0mbdj {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 # Configuração da página
 st.set_page_config(layout="wide")
 st.markdown("""
@@ -61,9 +71,14 @@ def get_utm_epsg(lon, lat):
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
 def create_map():
-    # Configuração inicial do mapa com tiles padrão
-    m = folium.Map(location=[-15, -55], zoom_start=4, 
-                  tiles=None, control_scale=True)
+    if 'mapa' in st.session_state and hasattr(st.session_state.mapa, 'location'):
+        location = st.session_state.mapa.location
+        zoom_start = st.session_state.mapa.options['zoom']
+        m = folium.Map(location=location, zoom_start=zoom_start, 
+                      tiles=None, control_scale=True)
+    else:
+        m = folium.Map(location=[-15, -55], zoom_start=4, 
+                      tiles=None, control_scale=True)
     
     # Adiciona várias camadas base
     folium.TileLayer(
@@ -130,6 +145,11 @@ def create_map():
             ).add_to(m)
 
     return m
+
+@st.cache_data
+def load_geodata(file):
+    # Função para carregar dados geoespaciais com cache
+    return gpd.read_file(file)
 
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
     try:
@@ -426,17 +446,21 @@ def main():
 
     with col2: 
         st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
+# Inicializa o mapa na sessão se não existir
+        if 'mapa' not in st.session_state:
+            st.session_state.mapa = create_map()
         
-        # Configuração do container do mapa
-        with st.container():
-            mapa = create_map()
-            mapa_data = st_folium(
-                mapa, 
-                width=700, 
-                height=600,
-                key='mapa_principal',
-                returned_objects=["last_active_drawing", "all_drawings"]
-            )
+        # Atualiza o mapa com base no estado atual
+        st.session_state.mapa = create_map()
+        
+        # Exibe o mapa
+        mapa_data = st_folium(
+            st.session_state.mapa, 
+            width=700, 
+            height=600,
+            key='mapa_principal',
+            returned_objects=["last_active_drawing", "all_drawings"]
+        )
             
             # Processar desenhos
             if mapa_data and mapa_data.get('last_active_drawing'):
