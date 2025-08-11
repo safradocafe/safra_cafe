@@ -10,7 +10,7 @@ import os
 
 # Configuração da página do Streamlit
 st.set_page_config(layout="wide")
-st.markdown("<h3>Processamento dos dados</h3>", unsafe_allow_html=True)
+st.markdown("<h3>#*Processamento dos dados</h3*>", unsafe_allow_html=True)
 st.markdown("<h4>Seleção das imagens do sensor MSI/Sentinel-2A, cálculo dos índices espectrais e criação do banco de dados<h4>")
 st.markdown("""
     <style>
