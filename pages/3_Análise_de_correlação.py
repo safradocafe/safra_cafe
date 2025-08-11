@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Configuração da página
-st.set_page_config(page_title="Análise de Correlação", layout="wide")
-st.title("📊 Análise de Correlação entre Índices e Produtividade")
+st.set_page_config(page_title="Análise de correlação", layout="wide")
+st.title("📊 Análise de Correlação entre índices espectrais e produtividade")
 
 # 1. Carregamento de Dados
 with st.container():
-    st.header("1. Carregamento de Dados")
+    st.header("1. Carregamento de dados")
 
     # Tenta carregar dados do st.session_state
     if 'gdf_resultado' in st.session_state and st.session_state['gdf_resultado'] is not None:
@@ -32,7 +32,7 @@ with st.container():
 
 # 2. Análise de Correlação
 with st.container():
-    st.header("2. Análise Estatística")
+    st.header("2. Análise estatística")
     
     # Selecionar colunas
     colunas_indices = [col for col in df.columns if any(x in col for x in 
@@ -60,7 +60,7 @@ with st.container():
             df_normalidade = pd.DataFrame(resultados_normalidade)
             
             # Exibir resultados
-            st.subheader("Teste de Normalidade (Shapiro-Wilk)")
+            st.subheader("Teste de normalidade (Shapiro-Wilk)")
             st.dataframe(df_normalidade.sort_values('p-valor'))
             
             proporcao_normal = df_normalidade['Normal'].value_counts(normalize=True).get('Sim', 0)
@@ -76,10 +76,7 @@ with st.container():
 
     # Cálculo de Correlação
     with st.spinner("Calculando correlações..."):
-        try:
-            # Matriz de correlação
-            corr_matrix = df[colunas_analise].corr(method=metodo.lower())
-            
+        try:         
             # Cálculo de p-valores para Pearson
             p_values = None
             if metodo == 'pearson':
@@ -97,9 +94,9 @@ with st.container():
 
             # Top 5 correlações
             st.subheader("Top 5 Correlações com Produtividade")
-            correlacoes = corr_matrix['maduro_kg'].drop('maduro_kg')
+            correlacoes = pd.Series({col: df[['maduro_kg', col]].corr(method=metodo.lower()).iloc[0, 1] 
+                         for col in colunas_indices if col != 'maduro_kg'})
             top5 = correlacoes.abs().sort_values(ascending=False).head(5)
-            
             for idx, valor in top5.items():
                 col1, col2 = st.columns([1, 4])
                 with col1:
@@ -113,26 +110,12 @@ with st.container():
                         p_val = p_values.loc['maduro_kg', idx]
                         sig = "✅ Significativa" if p_val < 0.05 else "⚠️ Não significativa"
                         st.caption(f"p-valor: {p_val:.4f} ({sig})")
-
-            # Visualização
-            st.subheader("Matriz de Correlação")
-            fig, ax = plt.subplots(figsize=(10, 8))
-            sns.heatmap(
-                corr_matrix,
-                annot=True,
-                cmap='coolwarm',
-                center=0,
-                fmt=".2f",
-                ax=ax
-            )
-            ax.set_title(f"Matriz de Correlação ({metodo.capitalize()})")
-            st.pyplot(fig)
             
         except Exception as e:
             st.error(f"Erro no cálculo de correlação: {str(e)}")
 
 # Seção de interpretação
-with st.expander("📚 Guia de Interpretação"):
+with st.expander("📚 Como interpretar os resultados"):
     st.markdown("""
     ## Como interpretar os resultados:
     
