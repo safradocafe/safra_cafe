@@ -22,45 +22,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Funções auxiliares
-def verificar_resultados_salvos():
-    """Verifica se existem resultados salvos na nuvem."""
-    temp_dir = "/tmp/streamlit_dados"
-    return os.path.exists(f"{temp_dir}/resultados_analise.gpkg")
-
-def carregar_resultados_da_nuvem():
-    """Carrega resultados previamente salvos na nuvem."""
-    temp_dir = "/tmp/streamlit_dados"
-    try:
-        gdf_resultado = gpd.read_file(f"{temp_dir}/resultados_analise.gpkg")
-        with open(f"{temp_dir}/parametros_analise.json", "r") as f:
-            parametros_analise = json.load(f)
-        return gdf_resultado, parametros_analise
-    except Exception as e:
-        st.error(f"Erro ao carregar resultados: {str(e)}")
-        return None, None
-
-def salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
-    """Salva os resultados da análise na nuvem do Streamlit para uso posterior."""
-    temp_dir = "/tmp/streamlit_dados"
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    try:
-        # Salvar GeoDataFrame com os resultados
-        gdf_resultado.to_file(f"{temp_dir}/resultados_analise.gpkg", driver="GPKG")
-        
-        # Salvar parâmetros da análise como JSON
-        with open(f"{temp_dir}/parametros_analise.json", "w") as f:
-            json.dump(parametros_analise, f)
-            
-        # Salvar também como CSV (sem geometria)
-        df_resultado = pd.DataFrame(gdf_resultado.drop(columns='geometry'))
-        df_resultado.to_csv(f"{temp_dir}/resultados_analise.csv", index=False)
-        
-        st.success("✅ Resultados salvos na nuvem com sucesso!")
-        return True
-    except Exception as e:
-        st.error(f"❌ Erro ao salvar resultados na nuvem: {str(e)}")
-        return False
 
 def carregar_arquivos_da_nuvem():
     """Carrega arquivos salvos na nuvem do Streamlit."""
@@ -96,13 +57,20 @@ except Exception as e:
     st.error(f"Erro ao inicializar o GEE: {str(e)}")
     st.stop()
 
+# Inicializa o st.session_state se ainda não existir
+if 'gdf_resultado' not in st.session_state:
+    st.session_state['gdf_resultado'] = None
+if 'parametros_analise' not in st.session_state:
+    st.session_state['parametros_analise'] = None
+
 # Barra lateral - Gerenciamento de resultados
 st.sidebar.header("Gerenciamento de resultados")
 if st.sidebar.button("↩️ Carregar resultados existentes"):
-    gdf_resultado, parametros = carregar_resultados_da_nuvem()
-    if gdf_resultado is not None:
-        st.session_state['gdf_resultado'] = gdf_resultado
+    if st.session_state['gdf_resultado'] is not None:
+        st.success("Resultados carregados da sessão atual.")
         st.experimental_rerun()
+    else:
+        st.warning("Não há resultados salvos na sessão atual.")
 
 # Interface principal
 st.sidebar.header("Configurações")
@@ -302,33 +270,38 @@ if st.sidebar.button("▶️ Executar análise"):
             if 'maduro_kg' in gdf_pontos.columns:
                 gdf_resultado['maduro_kg'] = gdf_pontos['maduro_kg'].values
 
-  # Mostrar resultados
-            st.subheader("Resultados da análise")
-            df_sem_geometria = gdf_resultado.drop(columns=['geometry'] if 'geometry' in gdf_resultado.columns else [])
-            st.dataframe(df_sem_geometria)
-            
-            # Opção para download
-            csv = df_sem_geometria.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Baixar resultados como CSV",
-                data=csv,
-                file_name="indices_vegetacao.csv",
-                mime="text/csv"
-            )
-
-            # ✅ BOTÃO DE SALVAMENTO DENTRO DO BLOCO DE PROCESSAMENTO
-            parametros_analise = {
+            # ✅ SALVAR RESULTADOS NA SESSÃO
+            st.session_state['gdf_resultado'] = gdf_resultado
+            st.session_state['parametros_analise'] = {
                 "data_inicio": data_inicio,
                 "data_fim": data_fim,
                 "indices_calculados": indices_selecionados,
                 "num_imagens_processadas": len(datas),
                 "num_pontos_analisados": len(gdf_resultado)
             }
-            
-            if st.button("💾 Salvar Resultados na Nuvem"):
-                if salvar_resultados_na_nuvem(gdf_resultado, parametros_analise):
-                    st.success("Dados salvos com sucesso!")
-                    st.session_state['resultados_salvos'] = True
+            st.success("✅ Análise concluída e resultados salvos na sessão atual!")
 
         except Exception as e:
             st.error(f"Erro durante o processamento: {str(e)}")
+
+# ---
+# Seção de exibição e download dos resultados
+# ---
+
+# Verifica se os resultados existem na sessão para poder mostrá-los
+if st.session_state['gdf_resultado'] is not None:
+    st.subheader("Resultados da análise")
+    df_sem_geometria = st.session_state['gdf_resultado'].drop(columns=['geometry'] if 'geometry' in st.session_state['gdf_resultado'].columns else [])
+    st.dataframe(df_sem_geometria)
+    
+    # Opção para download
+    csv = df_sem_geometria.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Baixar resultados como CSV",
+        data=csv,
+        file_name="indices_vegetacao.csv",
+        mime="text/csv"
+    )
+    
+    st.write("Parâmetros da análise salva:")
+    st.write(st.session_state['parametros_analise'])
