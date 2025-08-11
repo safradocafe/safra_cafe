@@ -315,7 +315,7 @@ def inserir_produtividade():
             st.experimental_rerun()
 
 def main():
-    st.markdown("📋 ##Adicionar informações")
+    st.markdown("📋 Adicionar informações")
 
     st.markdown("""
     ### 1️⃣ Área amostral
