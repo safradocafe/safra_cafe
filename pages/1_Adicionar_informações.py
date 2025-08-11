@@ -357,7 +357,7 @@ def main():
     col1, col2 = st.columns([1, 3])
 
     with col1:
-        st.header("Controles")
+        st.header("##Controles")
         
         # Uploads (mantido igual)
         uploaded_area = st.file_uploader("1. Área Amostral (.gpkg)", type=['gpkg'], key='upload_area')
