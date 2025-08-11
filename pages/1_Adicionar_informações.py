@@ -61,30 +61,16 @@ def get_utm_epsg(lon, lat):
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
 def create_map():
-def create_map():
-    # Configuração inicial do mapa com tiles padrão
-    m = folium.Map(location=[-15, -55], zoom_start=4, 
-                  tiles=None, control_scale=True)
-    
-    # Adiciona várias camadas base
-    folium.TileLayer(
-        'OpenStreetMap',
-        name='Mapa de Rua',
-        attr='OpenStreetMap contributors',
-        control=True
-    ).add_to(m)
-    
+    m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri World Imagery',
-        name='Visão de Satélite',
+        attr='Esri',
+        name='Satélite',
+        overlay=False,
         control=True
     ).add_to(m)
-    
-    # Adiciona controle de camadas
-    folium.LayerControl(position='topright', collapsed=False).add_to(m)
-    
-    # Configuração do controle de desenho
+
+    # Controle de desenho modificado para permitir múltiplos polígonos
     draw = folium.plugins.Draw(
         draw_options={
             'polyline': False,
@@ -95,7 +81,7 @@ def create_map():
             'polygon': {
                 'allowIntersection': False,
                 'showArea': True,
-                'repeatMode': False
+                'repeatMode': False  # Permite desenhar apenas um polígono por vez
             }
         },
         export=False,
@@ -103,7 +89,7 @@ def create_map():
     )
     draw.add_to(m)
 
-    # Mostrar áreas e pontos existentes (mantido igual)
+    # Mostrar área amostral existente (se houver)
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
@@ -111,6 +97,7 @@ def create_map():
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
         ).add_to(m)
 
+    # Mostrar área total existente (se houver)
     if st.session_state.gdf_poligono_total is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono_total,
@@ -118,6 +105,7 @@ def create_map():
             style_function=lambda x: {"color": "green", "fillColor": "green", "fillOpacity": 0.3}
         ).add_to(m)
 
+    # Mostrar pontos existentes (se houver)
     if st.session_state.gdf_pontos is not None:
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
@@ -130,6 +118,7 @@ def create_map():
                 popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']}"
             ).add_to(m)
 
+    folium.LayerControl().add_to(m)
     return m
 
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
@@ -428,15 +417,7 @@ def main():
     with col2: 
         st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
         mapa = create_map()
-    
-    # Aumente o height para melhor visualização
-        mapa_data = st_folium(
-            mapa, 
-            width=700, 
-            height=600,  # Aumentado para melhor visualização
-            key='mapa_principal',
-            returned_objects=["last_active_drawing", "all_drawings"]
-        )
+        mapa_data = st_folium(mapa, width=700, height=500, key='mapa_principal')
         
         # Processamento do desenho
         if mapa_data and mapa_data.get('last_active_drawing'):
