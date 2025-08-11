@@ -376,6 +376,15 @@ def main():
             time.sleep(0.3)
             st.rerun()
 
+                # Dados da área amostral
+        st.subheader("Dados da área amostral")
+        st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
+        st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
+
+        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
+            if st.session_state.gdf_poligono is not None:
+                gerar_pontos_automaticos()
+        
         if st.button("▶️ Área Total"):
             st.session_state.drawing_mode = 'total'
             st.session_state.modo_insercao = None
@@ -400,15 +409,6 @@ def main():
             st.session_state.gdf_poligono_total = None
             st.session_state.gdf_pontos = None
             st.success("Áreas limpas!")
-
-        # Dados da área amostral
-        st.subheader("Dados da área amostral")
-        st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
-        st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
-
-        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
-            if st.session_state.gdf_poligono is not None:
-                gerar_pontos_automaticos()
 
         # Unidade de produtividade
         st.subheader("Produtividade")
