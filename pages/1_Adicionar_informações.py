@@ -237,7 +237,7 @@ def exportar_dados():
     )
 
 def inserir_ponto_manual():   
-    with st.form("Inserir Ponto Manual"):
+    with st.form("Inserir ponto (manual)"):
         lat = st.number_input("Latitude:", value=-15.0)
         lon = st.number_input("Longitude:", value=-55.0)
         if st.form_submit_button("Adicionar Ponto"):
@@ -315,10 +315,10 @@ def inserir_produtividade():
             st.experimental_rerun()
 
 def main():
-    st.markdown("📋 Adicionar informações")
+    st.markdown("#📋*Adicionar informações*")
 
     st.markdown("""
-    ### 1️⃣ Área amostral
+    #### 1️⃣ Área amostral
     - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
     - **Opção 2:** Desenhe diretamente no mapa:
         1. Clique em **"Área amostral"**.
@@ -328,7 +328,7 @@ def main():
     """)
 
     st.markdown("""
-    ### 2️⃣ Dados de produtividade
+    #### 2️⃣ Dados de produtividade
     - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
     - **Opção 2:** Insira manualmente no mapa.
     - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
