@@ -10,19 +10,18 @@ import os
 
 # Configuração da página do Streamlit
 st.set_page_config(layout="wide")
-st.markdown("<h3>#*Processamento dos dados</h3*>", unsafe_allow_html=True)
-st.markdown("<h4>Seleção das imagens do sensor MSI/Sentinel-2A, cálculo dos índices espectrais e criação do banco de dados<h4>")
+st.markdown("<h3>Processamento dos dados</h3>", unsafe_allow_html=True)
+st.markdown("<h4>Seleção das imagens do sensor MSI/Sentinel-2A, cálculo dos índices espectrais e criação do banco de dados</h4>", unsafe_allow_html=True)
 st.markdown("""
     <style>
     .block-container {
         padding-top: 1rem !important;
-        padding-bottom: 1rem;
+        padding-bottom: 1rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # Funções auxiliares
-
 def carregar_arquivos_da_nuvem():
     """Carrega arquivos salvos na nuvem do Streamlit."""
     temp_dir = "/tmp/streamlit_dados"
