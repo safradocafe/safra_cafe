@@ -417,7 +417,7 @@ def main():
     with col2: 
         st.header("Mapa de visualização")
         mapa = create_map()
-        mapa_data = st_folium(mapa, width=800, height=600, key='mapa_principal')
+        mapa_data = st_folium(mapa, width=600, height=400, key='mapa_principal')
         
         # Processamento do desenho
         if mapa_data and mapa_data.get('last_active_drawing'):
