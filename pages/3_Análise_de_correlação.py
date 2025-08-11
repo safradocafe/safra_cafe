@@ -117,20 +117,35 @@ with st.container():
 # Seção de interpretação
 with st.expander("📚 Como interpretar os resultados"):
     st.markdown("""
-    ## Como interpretar os resultados:
-    
-    **Correlação de Pearson** ▸ Mede relações lineares entre variáveis contínuas  
-    ▸ Requer normalidade dos dados  
-    ▸ Valores próximos de 1 ou -1 indicam forte relação  
-    
-    **Correlação de Spearman** ▸ Mede relações monotônicas (não necessariamente lineares)  
-    ▸ Não requer normalidade  
-    ▸ Menos sensível a outliers  
-    
-    **p-valor (Pearson)** ▸ p < 0.05 → Correlação estatisticamente significativa  
-    ▸ p ≥ 0.05 → Não podemos afirmar que há correlação  
-    
-    **Dicas importantes:** • Correlação ≠ Causalidade  
-    • Considere sempre o contexto agronômico  
-    • Valores acima de 0.7 geralmente indicam relações fortes  
+### 📘 Interpretação das Correlações
+
+🔹 **Correlação de Pearson:**
+- Mede a relação linear entre duas variáveis numéricas.
+- Pressupõe que os dados sejam normalmente distribuídos.
+- Varia de **-1** a **1**:
+    + **1** → correlação perfeita positiva
+    + **0** → nenhuma correlação
+    + **-1** → correlação perfeita negativa
+- Exemplo: um valor de **0.75** indica que quando uma variável aumenta, a outra tende a aumentar também.
+
+🔹 **Correlação de Spearman:**
+- Mede a relação monotônica (não necessariamente linear) entre duas variáveis.
+- Baseia-se na ordenação dos dados (ranks).
+- Não exige distribuição normal.
+- Útil quando os dados possuem outliers ou relações não lineares.
+
+🔹 **p-valor (apenas Pearson no script):**
+- Indica a significância estatística da correlação.
+- **p < 0.05** → correlação estatisticamente significativa (nível de confiança de 95%).
+
+🔹 **Como interpretar a força da correlação:**
+- **0.00 a 0.30** → fraca
+- **0.31 a 0.50** → moderada
+- **0.51 a 0.70** → forte
+- **0.71 a 0.90** → muito forte
+- **acima de 0.90** → quase perfeita
+
+✅ **Dica:**
+- Correlações não implicam causalidade.
+- Use a análise de correlação como **etapa exploratória**, para saber se os dados analisados se correlacionam bem de alguma forma, não como prova de relação causal. Boas correlações negativas (próximo de -1) também podem indicar tendências dos dados.
     """)
