@@ -315,10 +315,10 @@ def inserir_produtividade():
             st.experimental_rerun()
 
 def main():
-    st.title("📋 Adicionar Informações")
+    st.title("📋 Adicionar informações")
 
     st.markdown("""
-    ### 1️⃣ Área Amostral
+    ### 1️⃣ Área amostral
     - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
     - **Opção 2:** Desenhe diretamente no mapa:
         1. Clique em **"Área amostral"**.
@@ -328,7 +328,7 @@ def main():
     """)
 
     st.markdown("""
-    ### 2️⃣ Dados de Produtividade
+    ### 2️⃣ Dados de produtividade
     - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
     - **Opção 2:** Insira manualmente no mapa.
     - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
@@ -357,10 +357,10 @@ def main():
     col1, col2 = st.columns([1, 3])
 
     with col1:
-        st.header("##Controles")
+        st.markdown("### Controles") 
         
         # Uploads (mantido igual)
-        uploaded_area = st.file_uploader("1. Área Amostral (.gpkg)", type=['gpkg'], key='upload_area')
+        uploaded_area = st.file_uploader("1. Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
         if uploaded_area:
             processar_arquivo_carregado(uploaded_area, tipo='amostral')
 
@@ -369,7 +369,7 @@ def main():
             processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
 
         # Botões de desenho modificados
-        if st.button("▶️ Área Amostral"):
+        if st.button("▶️ Área amostral"):
             st.session_state.drawing_mode = 'amostral'
             st.session_state.modo_insercao = None
             st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
@@ -394,7 +394,7 @@ def main():
         if st.button("💾 Salvar pontos"):
             salvar_pontos()
         
-        if st.button("▶️ Área Total"):
+        if st.button("▶️ Área total"):
             st.session_state.drawing_mode = 'total'
             st.session_state.modo_insercao = None
             st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
@@ -404,7 +404,7 @@ def main():
         if st.button("💾 Exportar dados"):
             exportar_dados()
 
-        if st.button("🗑️ Limpar Área"):
+        if st.button("🗑️ Limpar área"):
             st.session_state.gdf_poligono = None
             st.session_state.gdf_poligono_total = None
             st.session_state.gdf_pontos = None
