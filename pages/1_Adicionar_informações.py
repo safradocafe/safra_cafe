@@ -424,37 +424,42 @@ def main():
         st.subheader("Produtividade")
         st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
 
-    with col2: 
-        st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
-        mapa = create_map()
+   with col2: 
+    st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
     
-    # Aumente o height para melhor visualização
-    mapa_data = st_folium(
-        mapa, 
-        width=700, 
-        height=600,  # Aumentado para melhor visualização
-        key='mapa_principal',
-        returned_objects=["last_active_drawing", "all_drawings"]
-    )
+    # Configuração do container do mapa
+    with st.container():
+        mapa = create_map()
+        mapa_data = st_folium(
+            mapa, 
+            width=700, 
+            height=600,
+            key='mapa_principal',
+            returned_objects=["last_active_drawing", "all_drawings"]
+        )
         
-        # Processamento do desenho
+        # Processar desenhos
         if mapa_data and mapa_data.get('last_active_drawing'):
             geometry = mapa_data['last_active_drawing']['geometry']
-            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-            
-            if st.session_state.get('drawing_mode') == 'amostral':
-                st.session_state.gdf_poligono = gdf
-                st.session_state.drawing_mode = None
-                st.success("Área amostral definida!")
-                time.sleep(0.3)
-                st.rerun()
+            try:
+                gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
                 
-            elif st.session_state.get('drawing_mode') == 'total':
-                st.session_state.gdf_poligono_total = gdf
-                st.session_state.drawing_mode = None
-                st.success("Área total definida!")
-                time.sleep(0.3)
-                st.rerun()
+                if st.session_state.get('drawing_mode') == 'amostral':
+                    st.session_state.gdf_poligono = gdf
+                    st.session_state.drawing_mode = None
+                    st.success("Área amostral definida!")
+                    time.sleep(0.3)
+                    st.rerun()
+                    
+                elif st.session_state.get('drawing_mode') == 'total':
+                    st.session_state.gdf_poligono_total = gdf
+                    st.session_state.drawing_mode = None
+                    st.success("Área total definida!")
+                    time.sleep(0.3)
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Erro ao processar geometria: {str(e)}")
 
 if __name__ == "__main__":
     main()
