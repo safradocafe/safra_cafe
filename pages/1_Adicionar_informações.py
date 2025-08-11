@@ -357,7 +357,7 @@ def main():
     col1, col2 = st.columns([1, 3])
 
     with col1:
-        st.markdown("<h4>📋 Controles</h4>", unsafe_allow_html=True)
+        st.markdown("<h4>Controles</h4>", unsafe_allow_html=True)
         
         # Uploads (mantido igual)
         uploaded_area = st.file_uploader("1. Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
@@ -415,7 +415,7 @@ def main():
         st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'])
 
     with col2: 
-        st.markdown("<h4>📋 Mapa de visualização</h4>", unsafe_allow_html=True)
+        st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
         mapa = create_map()
         mapa_data = st_folium(mapa, width=700, height=500, key='mapa_principal')
         
