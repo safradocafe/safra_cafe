@@ -315,10 +315,10 @@ def inserir_produtividade():
             st.experimental_rerun()
 
 def main():
-    st.markdown("📋##**Adicionar informações**")
+    st.markdown("<h3>📋 Adicionar informações</h3>", unsafe_allow_html=True)
 
     st.markdown("""
-    #### 1️⃣ Área amostral
+    ##### 1️⃣ Área amostral
     - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
     - **Opção 2:** Desenhe diretamente no mapa:
         1. Clique em **"Área amostral"**.
@@ -328,7 +328,7 @@ def main():
     """)
 
     st.markdown("""
-    #### 2️⃣ Dados de produtividade
+    ##### 2️⃣ Dados de produtividade
     - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
     - **Opção 2:** Insira manualmente no mapa.
     - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
@@ -346,7 +346,7 @@ def main():
     """)
 
     st.markdown("""
-    ### 3️⃣ Finalizar
+    ##### 3️⃣ Finalizar
     Após inserir **todos os dados**, clique em **"Salvar dados"**.
     """)
 
