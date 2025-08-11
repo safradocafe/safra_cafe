@@ -11,45 +11,21 @@ import seaborn as sns
 st.set_page_config(page_title="Análise de Correlação", layout="wide")
 st.title("📊 Análise de Correlação entre Índices e Produtividade")
 
-# 1. Função para carregar dados da nuvem
-@st.cache_data
-def carregar_dados_da_nuvem():
-    """Carrega os dados salvos na nuvem pelo código anterior"""
-    temp_dir = "/tmp/streamlit_dados"
-    
-    try:
-        # Tentar carregar CSV primeiro
-        csv_path = f"{temp_dir}/resultados_analise.csv"
-        gpkg_path = f"{temp_dir}/resultados_analise.gpkg"
-        
-        if os.path.exists(csv_path):
-            return pd.read_csv(csv_path)
-        elif os.path.exists(gpkg_path):
-            import geopandas as gpd
-            gdf = gpd.read_file(gpkg_path)
-            return pd.DataFrame(gdf.drop(columns='geometry', errors='ignore'))
-        else:
-            st.error("Nenhum arquivo de resultados encontrado na nuvem")
-            return None
-            
-    except Exception as e:
-        st.error(f"Erro ao carregar dados: {str(e)}")
-        return None
-
-# Interface principal
+# 1. Carregamento de Dados
 with st.container():
     st.header("1. Carregamento de Dados")
-    df = carregar_dados_da_nuvem()
 
-    if df is None:
+    # Tenta carregar dados do st.session_state
+    if 'gdf_resultado' in st.session_state and st.session_state['gdf_resultado'] is not None:
+        df = st.session_state['gdf_resultado']
+        st.success(f"✅ Dados carregados com sucesso da sessão atual (Total: {len(df)} registros)")
+    else:
         st.warning("""
-            ❌ Dados não encontrados. Por favor:
-            1. Execute primeiro o código de processamento
-            2. Certifique-se que os dados foram salvos na nuvem
+            ❌ Dados não encontrados na sessão atual. Por favor:
+            1. Execute o código de processamento primeiro na mesma sessão.
+            2. Clique no botão '▶️ Executar análise' para salvar os resultados na sessão.
         """)
         st.stop()
-    
-    st.success(f"✅ Dados carregados com sucesso (Total: {len(df)} registros)")
     
     with st.expander("Visualizar dados brutos"):
         st.dataframe(df.head())
@@ -60,7 +36,7 @@ with st.container():
     
     # Selecionar colunas
     colunas_indices = [col for col in df.columns if any(x in col for x in 
-                      ['NDVI', 'NDRE', 'CCCI', 'SAVI', 'GNDVI', 'NDMI', 'MSAVI2', 'NBR', 'TWI2', 'NDWI'])]
+                                     ['NDVI', 'NDRE', 'CCCI', 'SAVI', 'GNDVI', 'NDMI', 'MSAVI2', 'NBR', 'TWI2', 'NDWI'])]
     
     if 'maduro_kg' not in df.columns:
         st.error("Coluna 'maduro_kg' não encontrada nos dados!")
@@ -73,7 +49,7 @@ with st.container():
         try:
             resultados_normalidade = []
             for coluna in colunas_analise:
-                stat, p = shapiro(df[coluna])
+                stat, p = shapiro(df[coluna].dropna()) # Adicionado .dropna() para evitar erros
                 normal = p > 0.05
                 resultados_normalidade.append({
                     'Variável': coluna, 
@@ -115,7 +91,8 @@ with st.container():
                 for i in colunas_analise:
                     for j in colunas_analise:
                         if i != j:
-                            _, p_val = pearsonr(df[i], df[j])
+                            # Adicionado .dropna() para garantir que os dados sejam válidos
+                            _, p_val = pearsonr(df[i].dropna(), df[j].dropna()) 
                             p_values.loc[i, j] = p_val
 
             # Top 5 correlações
@@ -159,22 +136,18 @@ with st.expander("📚 Guia de Interpretação"):
     st.markdown("""
     ## Como interpretar os resultados:
     
-    **Correlação de Pearson**  
-    ▸ Mede relações lineares entre variáveis contínuas  
+    **Correlação de Pearson** ▸ Mede relações lineares entre variáveis contínuas  
     ▸ Requer normalidade dos dados  
     ▸ Valores próximos de 1 ou -1 indicam forte relação  
     
-    **Correlação de Spearman**  
-    ▸ Mede relações monotônicas (não necessariamente lineares)  
+    **Correlação de Spearman** ▸ Mede relações monotônicas (não necessariamente lineares)  
     ▸ Não requer normalidade  
     ▸ Menos sensível a outliers  
     
-    **p-valor (Pearson)**  
-    ▸ p < 0.05 → Correlação estatisticamente significativa  
+    **p-valor (Pearson)** ▸ p < 0.05 → Correlação estatisticamente significativa  
     ▸ p ≥ 0.05 → Não podemos afirmar que há correlação  
     
-    **Dicas importantes:**  
-    • Correlação ≠ Causalidade  
+    **Dicas importantes:** • Correlação ≠ Causalidade  
     • Considere sempre o contexto agronômico  
     • Valores acima de 0.7 geralmente indicam relações fortes  
     """)
