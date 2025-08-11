@@ -385,13 +385,6 @@ def main():
             if st.session_state.gdf_poligono is not None:
                 gerar_pontos_automaticos()
         
-        if st.button("▶️ Área Total"):
-            st.session_state.drawing_mode = 'total'
-            st.session_state.modo_insercao = None
-            st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
-            time.sleep(0.3)
-            st.rerun()
-
         if st.button("✏️ Inserir pontos manualmente"):
             st.session_state.modo_insercao = 'manual'
 
@@ -400,7 +393,14 @@ def main():
 
         if st.button("💾 Salvar pontos"):
             salvar_pontos()
-
+        
+        if st.button("▶️ Área Total"):
+            st.session_state.drawing_mode = 'total'
+            st.session_state.modo_insercao = None
+            st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
+            time.sleep(0.3)
+            st.rerun()
+        
         if st.button("💾 Exportar dados"):
             exportar_dados()
 
