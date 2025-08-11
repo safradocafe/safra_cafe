@@ -426,7 +426,7 @@ def main():
 
     with col2: 
         st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
-    mapa = create_map()
+        mapa = create_map()
     
     # Aumente o height para melhor visualização
     mapa_data = st_folium(
