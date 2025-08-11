@@ -280,7 +280,7 @@ def inserir_produtividade():
     
     with st.expander("Editar dados de produtividade"):
         for idx, row in st.session_state.gdf_pontos.iterrows():
-            cols = st.columns([1, 2, 2, 1])
+            cols = st.columns([1, 4, 4, 2])
             with cols[0]:
                 st.write(f"**Ponto {idx+1}**")
                 st.write(f"Lat: {row['latitude']:.5f}")
