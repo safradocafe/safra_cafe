@@ -15,13 +15,9 @@ from streamlit_folium import st_folium
 import zipfile
 
 # Configuração da página
-st.set_page_config(layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(layout="wide")
 st.markdown("""
     <style>
-    .st-emotion-cache-1v0mbdj {
-        border: 1px solid #ddd;
-        border-radius: 8px;
-    }
     .block-container {
         padding-top: 0rem !important;
         padding-bottom: 1rem;
@@ -65,14 +61,10 @@ def get_utm_epsg(lon, lat):
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
 def create_map():
-    if 'mapa' in st.session_state and hasattr(st.session_state.mapa, 'location'):
-        location = st.session_state.mapa.location
-        zoom_start = st.session_state.mapa.options['zoom']
-        m = folium.Map(location=location, zoom_start=zoom_start, 
-                      tiles=None, control_scale=True)
-    else:
-        m = folium.Map(location=[-15, -55], zoom_start=4, 
-                      tiles=None, control_scale=True)
+def create_map():
+    # Configuração inicial do mapa com tiles padrão
+    m = folium.Map(location=[-15, -55], zoom_start=4, 
+                  tiles=None, control_scale=True)
     
     # Adiciona várias camadas base
     folium.TileLayer(
@@ -111,7 +103,7 @@ def create_map():
     )
     draw.add_to(m)
 
-    # Mostrar áreas e pontos existentes
+    # Mostrar áreas e pontos existentes (mantido igual)
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
@@ -139,10 +131,6 @@ def create_map():
             ).add_to(m)
 
     return m
-
-@st.cache_data
-def load_geodata(file):
-    return gpd.read_file(file)
 
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
     try:
@@ -382,7 +370,7 @@ def main():
     with col1:
         st.markdown("<h4>Controles</h4>", unsafe_allow_html=True)
         
-        # Uploads
+        # Uploads (mantido igual)
         uploaded_area = st.file_uploader("1. Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
         if uploaded_area:
             processar_arquivo_carregado(uploaded_area, tipo='amostral')
@@ -391,7 +379,7 @@ def main():
         if uploaded_pontos:
             processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
 
-        # Botões de desenho
+        # Botões de desenho modificados
         if st.button("▶️ Área amostral"):
             st.session_state.drawing_mode = 'amostral'
             st.session_state.modo_insercao = None
@@ -399,7 +387,7 @@ def main():
             time.sleep(0.3)
             st.rerun()
 
-        # Dados da área amostral
+                # Dados da área amostral
         st.subheader("Dados da área amostral")
         st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=0.0)
         st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=0.0)
@@ -439,45 +427,35 @@ def main():
 
     with col2: 
         st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
-        
-        # Inicializa o mapa na sessão se não existir
-        if 'mapa' not in st.session_state:
-            st.session_state.mapa = create_map()
-        
-        # Atualiza o mapa com base no estado atual
-        st.session_state.mapa = create_map()
-        
-        # Exibe o mapa
+        mapa = create_map()
+    
+    # Aumente o height para melhor visualização
         mapa_data = st_folium(
-            st.session_state.mapa, 
+            mapa, 
             width=700, 
-            height=600,
+            height=600,  # Aumentado para melhor visualização
             key='mapa_principal',
             returned_objects=["last_active_drawing", "all_drawings"]
         )
         
-        # Processar desenhos
+        # Processamento do desenho
         if mapa_data and mapa_data.get('last_active_drawing'):
             geometry = mapa_data['last_active_drawing']['geometry']
-            try:
-                gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+            gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+            
+            if st.session_state.get('drawing_mode') == 'amostral':
+                st.session_state.gdf_poligono = gdf
+                st.session_state.drawing_mode = None
+                st.success("Área amostral definida!")
+                time.sleep(0.3)
+                st.rerun()
                 
-                if st.session_state.get('drawing_mode') == 'amostral':
-                    st.session_state.gdf_poligono = gdf
-                    st.session_state.drawing_mode = None
-                    st.success("Área amostral definida!")
-                    time.sleep(0.3)
-                    st.rerun()
-                    
-                elif st.session_state.get('drawing_mode') == 'total':
-                    st.session_state.gdf_poligono_total = gdf
-                    st.session_state.drawing_mode = None
-                    st.success("Área total definida!")
-                    time.sleep(0.3)
-                    st.rerun()
-                    
-            except Exception as e:
-                st.error(f"Erro ao processar geometria: {str(e)}")
+            elif st.session_state.get('drawing_mode') == 'total':
+                st.session_state.gdf_poligono_total = gdf
+                st.session_state.drawing_mode = None
+                st.success("Área total definida!")
+                time.sleep(0.3)
+                st.rerun()
 
 if __name__ == "__main__":
     main()
