@@ -14,7 +14,7 @@ import folium
 from streamlit_folium import st_folium
 import zipfile
 
-
+# Configuração da página
 st.set_page_config(layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
     <style>
@@ -22,12 +22,6 @@ st.markdown("""
         border: 1px solid #ddd;
         border-radius: 8px;
     }
-    </style>
-""", unsafe_allow_html=True)
-# Configuração da página
-st.set_page_config(layout="wide")
-st.markdown("""
-    <style>
     .block-container {
         padding-top: 0rem !important;
         padding-bottom: 1rem;
@@ -117,7 +111,7 @@ def create_map():
     )
     draw.add_to(m)
 
-    # Mostrar áreas e pontos existentes (mantido igual)
+    # Mostrar áreas e pontos existentes
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
@@ -148,7 +142,6 @@ def create_map():
 
 @st.cache_data
 def load_geodata(file):
-    # Função para carregar dados geoespaciais com cache
     return gpd.read_file(file)
 
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
@@ -389,7 +382,7 @@ def main():
     with col1:
         st.markdown("<h4>Controles</h4>", unsafe_allow_html=True)
         
-        # Uploads (mantido igual)
+        # Uploads
         uploaded_area = st.file_uploader("1. Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
         if uploaded_area:
             processar_arquivo_carregado(uploaded_area, tipo='amostral')
@@ -398,7 +391,7 @@ def main():
         if uploaded_pontos:
             processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
 
-        # Botões de desenho modificados
+        # Botões de desenho
         if st.button("▶️ Área amostral"):
             st.session_state.drawing_mode = 'amostral'
             st.session_state.modo_insercao = None
@@ -446,7 +439,8 @@ def main():
 
     with col2: 
         st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
-# Inicializa o mapa na sessão se não existir
+        
+        # Inicializa o mapa na sessão se não existir
         if 'mapa' not in st.session_state:
             st.session_state.mapa = create_map()
         
@@ -461,29 +455,29 @@ def main():
             key='mapa_principal',
             returned_objects=["last_active_drawing", "all_drawings"]
         )
-            
-            # Processar desenhos
-            if mapa_data and mapa_data.get('last_active_drawing'):
-                geometry = mapa_data['last_active_drawing']['geometry']
-                try:
-                    gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+        
+        # Processar desenhos
+        if mapa_data and mapa_data.get('last_active_drawing'):
+            geometry = mapa_data['last_active_drawing']['geometry']
+            try:
+                gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+                
+                if st.session_state.get('drawing_mode') == 'amostral':
+                    st.session_state.gdf_poligono = gdf
+                    st.session_state.drawing_mode = None
+                    st.success("Área amostral definida!")
+                    time.sleep(0.3)
+                    st.rerun()
                     
-                    if st.session_state.get('drawing_mode') == 'amostral':
-                        st.session_state.gdf_poligono = gdf
-                        st.session_state.drawing_mode = None
-                        st.success("Área amostral definida!")
-                        time.sleep(0.3)
-                        st.rerun()
-                        
-                    elif st.session_state.get('drawing_mode') == 'total':
-                        st.session_state.gdf_poligono_total = gdf
-                        st.session_state.drawing_mode = None
-                        st.success("Área total definida!")
-                        time.sleep(0.3)
-                        st.rerun()
-                        
-                except Exception as e:
-                    st.error(f"Erro ao processar geometria: {str(e)}")
+                elif st.session_state.get('drawing_mode') == 'total':
+                    st.session_state.gdf_poligono_total = gdf
+                    st.session_state.drawing_mode = None
+                    st.success("Área total definida!")
+                    time.sleep(0.3)
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Erro ao processar geometria: {str(e)}")
 
 if __name__ == "__main__":
     main()
