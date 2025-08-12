@@ -6,6 +6,9 @@ port = int(os.environ.get("PORT", 8501))
 st.set_page_config(page_title="Safra do café", layout="wide")
 
 st.title("☕ Safra do café - Sistema avançado de previsão da produtividade")
+if st.sidebar.button("Carregar geemap"):
+    import geemap
+    st.write("Geemap carregado com sucesso!")
 
 st.markdown("""
 Este é um protótipo de **geotecnologia para previsão da produtividade do café** com o uso de imagens de 
