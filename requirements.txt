@@ -6,7 +6,7 @@ shapely
 earthengine-api
 folium
 streamlit-folium
-speechrecognition
+SpeechRecognition
 geocoder
 pandas>=1.5.0
 numpy>=1.24.0
@@ -15,7 +15,4 @@ seaborn>=0.12.0
 scipy>=1.10.0
 scikit-learn
 xgboost
-git add Procfile runtime.txt
-git commit -m "Add Procfile and runtime for Railway deployment"
-git push origin main
 joblib
