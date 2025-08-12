@@ -1,14 +1,8 @@
 import streamlit as st
-from PIL import Image
-import os
 
-port = int(os.environ.get("PORT", 8501))
 st.set_page_config(page_title="Safra do café", layout="wide")
 
 st.title("☕ Safra do café - Sistema avançado de previsão da produtividade")
-if st.sidebar.button("Carregar geemap"):
-    import geemap
-    st.write("Geemap carregado com sucesso!")
 
 st.markdown("""
 Este é um protótipo de **geotecnologia para previsão da produtividade do café** com o uso de imagens de 
@@ -28,3 +22,19 @@ st.info("""
 O protótipo utiliza técnicas de Agricultura de Precisão, processamento de imagens de satélite e algoritmos de Machine Learning para 
 estimar a produtividade em lavouras de café, com validação científica conforme metodologia desenvolvida na pesquisa.
 """)
+
+
+page = st.sidebar.selectbox("Escolha a página", ["Início", "Mapa", "Machine Learning"])
+
+if page == "Mapa":
+    with st.spinner("Carregando bibliotecas de geoprocessamento..."):
+        import geemap
+        import geopandas as gpd
+    st.write("Aqui você pode usar geemap e geopandas.")
+
+elif page == "Machine Learning":
+    with st.spinner("Carregando bibliotecas de machine learning..."):
+        import pandas as pd
+        import numpy as np
+        import xgboost as xgb
+    st.write("Aqui você pode rodar os modelos de ML.")
