@@ -18,5 +18,4 @@ xgboost
 git add Procfile runtime.txt
 git commit -m "Add Procfile and runtime for Railway deployment"
 git push origin main
-
 joblib
