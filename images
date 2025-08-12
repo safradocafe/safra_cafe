@@ -1,3 +1,0 @@
-# Código corrigido:
-img1 = Image.open("images/indices_capa.jpeg")
-img2 = Image.open("images/img_capa_prod.jpeg")
