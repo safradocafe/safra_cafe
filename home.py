@@ -1,6 +1,8 @@
 import streamlit as st
 from PIL import Image
-
+import os
+port = int(os.environ.get("PORT", 8501))
+st.set_page_config(page_title="Safra do café", layout="wide")
 st.set_page_config(
     page_title="Safra do café",
     layout="wide"
