@@ -15,4 +15,8 @@ seaborn>=0.12.0
 scipy>=1.10.0
 scikit-learn
 xgboost
+git add Procfile runtime.txt
+git commit -m "Add Procfile and runtime for Railway deployment"
+git push origin main
+
 joblib
