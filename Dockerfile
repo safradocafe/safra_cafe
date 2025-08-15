@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expõe a porta que o Streamlit usará
-EXPOSE 8501
+EXPOSE 8080
 
 # Comando para rodar a aplicação Streamlit
 CMD ["streamlit", "run", "home.py", "--server.port", "$PORT", "--server.address", "0.0.0.0"]
