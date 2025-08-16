@@ -4,7 +4,7 @@ st.set_page_config(page_title="Safra do café", layout="wide")
 
 st.title("☕ Safra do café")
 st.markdown("""
-*Sistema avançado de previsão da produtividade*""")
+**Sistema avançado de previsão da produtividade**""")
 
 st.markdown("""
 Este é um protótipo de **geotecnologia para previsão da produtividade do café** com o uso de imagens de 
