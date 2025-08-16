@@ -1,5 +1,4 @@
-# Usa uma imagem base Python leve
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 # Instala dependências de sistema necessárias para pacotes GIS
 RUN apt-get update && apt-get install -y \
@@ -21,5 +20,5 @@ COPY . .
 # Expõe a porta padrão do Cloud Run
 EXPOSE 8080
 
-# Inicia o Streamlit usando a variável $PORT do Cloud Run
-CMD streamlit run home.py --server.port=${PORT} --server.address=0.0.0.0
+# Comando para iniciar o aplicativo Flask
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "main:app"]
