@@ -1,24 +1,24 @@
 FROM python:3.10-slim
 
-# Instala dependências de sistema necessárias para pacotes GIS
+# Instala dependências do sistema
 RUN apt-get update && apt-get install -y \
     gdal-bin libgdal-dev libgeos-dev libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Define o diretório de trabalho
 WORKDIR /app
 
-# Copia o arquivo de requisitos
+# Copia os requirements primeiro para aproveitar cache do Docker
 COPY requirements.txt .
-
-# Instala dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o restante do código
+# Copia o resto da aplicação
 COPY . .
 
-# Expõe a porta padrão do Cloud Run
+# Cria diretório .streamlit para o config.toml
+RUN mkdir -p .streamlit
+
+# Porta que o Cloud Run espera
 EXPOSE 8080
 
-# Comando para iniciar o aplicativo Flask
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "main:app"]
+# Comando para rodar o Streamlit no Cloud Run
+CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
