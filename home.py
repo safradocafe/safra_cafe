@@ -26,9 +26,9 @@ estimar a produtividade em lavouras de café, com validação científica confor
 """)
 
 
-page = st.sidebar.selectbox("Escolha a página", ["Início", "Mapa", "Machine Learning"])
+page = st.sidebar.selectbox("Escolha a página", ["home", "Adicionar informações", "Treinamento com Machine Learning"])
 
-if page == "Mapa":
+if page == "Adicionar informações":
     with st.spinner("Carregando bibliotecas de geoprocessamento..."):
         import geemap
         import geopandas as gpd
