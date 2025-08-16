@@ -14,9 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia o resto da aplicação
 COPY . .
 
-# Cria diretório .streamlit para o config.toml
-RUN mkdir -p .streamlit
-
 # Porta que o Cloud Run espera
 EXPOSE 8080
 
