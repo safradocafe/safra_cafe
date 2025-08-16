@@ -39,3 +39,12 @@ elif page == "Machine Learning":
         import numpy as np
         import xgboost as xgb
     st.write("Aqui você pode rodar os modelos de ML.")
+if page == "Mapa":
+    with st.spinner("Carregando bibliotecas de geoprocessamento..."):
+        try:
+            import geemap
+            import geopandas as gpd
+            st.success("Bibliotecas carregadas!")
+        except ImportError:
+            st.error("Não foi possível carregar geemap ou geopandas.")
+
