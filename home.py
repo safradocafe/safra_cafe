@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Safra do café", layout="wide")
 
-st.title("☕ Safra do café
+st.title("☕ Safra do café)
 st.markdown("##Sistema avançado de previsão da produtividade")
 
 st.markdown("""
