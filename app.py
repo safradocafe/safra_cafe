@@ -2,21 +2,21 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="☕ Safra do café",
+    page_title="☕ SAFRA DO CAFÉ - Sistema para Cafeicultura de Precisão",
     page_icon="☕",
     layout="wide"
 )
 
-st.title("☕ Safra do café")
+st.title("☕ Safra do Café")
 st.caption("Sistema avançado de geotecnologias para Cafeicultura de Precisão")
 
 st.markdown(
     """
     Este protótipo integra **amostras geolocalizadas de produtividade**, 
-    **imagens Sentinel-2 (MSI)** via Google Earth Engine e **ML** para:
+    **imagens Sentinel-2 (MSI)** via Google Earth Engine e **Machine Learning** para:
     - Mapa de variabilidade espacial da produtividade  
     - Monitoramento por índices espectrais (NDVI, NDRE, CCCI, GNDVI, NDMI, MSAVI2, NBR, TWI2, NDWI)  
-    - Análise temporal e previsão da próxima safra
+    - Análise temporal e previsão de safra
     """
 )
 
