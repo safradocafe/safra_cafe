@@ -15,7 +15,6 @@ from streamlit_folium import st_folium
 import zipfile
 
 # Configuração da página
-st.set_page_config(layout="wide")
 st.markdown("""
     <style>
     .block-container {
@@ -28,7 +27,8 @@ st.markdown("""
 
 # Inicialização do estado
 for key in ['gdf_poligono', 'gdf_pontos', 'gdf_poligono_total', 'unidade_selecionada',
-            'densidade_plantas', 'produtividade_media', 'modo_desenho', 'mapa_data', 'modo_insercao']:
+            'densidade_plantas', 'produtividade_media', 'modo_desenho', 'mapa_data', 'modo_insercao',
+            'drawing_mode']:   
     if key not in st.session_state:
         if key == 'unidade_selecionada':
             st.session_state[key] = 'kg'
@@ -206,35 +206,45 @@ def exportar_dados():
         st.warning("⚠️ É necessário definir ambas as áreas (amostral e total) antes de exportar!")
         return
 
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        parametros = {
-            'densidade_pes_ha': st.session_state.densidade_plantas,
-            'produtividade_media_sacas_ha': st.session_state.produtividade_media
-        }
-        zipf.writestr('parametros_area.json', json.dumps(parametros))
+    # Cria arquivos temporários em /tmp
+    tmp_dir = "/tmp/export_zip"
+    os.makedirs(tmp_dir, exist_ok=True)
 
-        if st.session_state.gdf_poligono is not None:
-            poligono_buffer = BytesIO()
-            st.session_state.gdf_poligono.to_file(poligono_buffer, driver='GPKG')
-            zipf.writestr('area_poligono.gpkg', poligono_buffer.getvalue())
+    # Salva GPKGs em disco
+    poligono_path = os.path.join(tmp_dir, "area_poligono.gpkg")
+    poligono_total_path = os.path.join(tmp_dir, "area_total_poligono.gpkg")
+    pontos_path = os.path.join(tmp_dir, "pontos_produtividade.gpkg")
+    params_path = os.path.join(tmp_dir, "parametros_area.json")
+    zip_path = os.path.join(tmp_dir, "dados_produtividade.zip")
 
-        if st.session_state.gdf_poligono_total is not None:
-            poligono_total_buffer = BytesIO()
-            st.session_state.gdf_poligono_total.to_file(poligono_total_buffer, driver='GPKG')
-            zipf.writestr('area_total_poligono.gpkg', poligono_total_buffer.getvalue())
+    st.session_state.gdf_poligono.to_file(poligono_path, driver="GPKG")
+    st.session_state.gdf_poligono_total.to_file(poligono_total_path, driver="GPKG")
+    if st.session_state.gdf_pontos is not None:
+        st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
 
+    parametros = {
+        'densidade_pes_ha': st.session_state.densidade_plantas,
+        'produtividade_media_sacas_ha': st.session_state.produtividade_media
+    }
+    with open(params_path, "w") as f:
+        json.dump(parametros, f)
+
+    # Monta o ZIP a partir dos arquivos salvos
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        zipf.write(poligono_path, arcname="area_poligono.gpkg")
+        zipf.write(poligono_total_path, arcname="area_total_poligono.gpkg")
         if st.session_state.gdf_pontos is not None:
-            pontos_buffer = BytesIO()
-            st.session_state.gdf_pontos.to_file(pontos_buffer, driver='GPKG')
-            zipf.writestr('pontos_produtividade.gpkg', pontos_buffer.getvalue())
+            zipf.write(pontos_path, arcname="pontos_produtividade.gpkg")
+        zipf.write(params_path, arcname="parametros_area.json")
 
-    st.download_button(
-        label="💾 Exportar dados (ZIP)",
-        data=zip_buffer.getvalue(),
-        file_name="dados_produtividade.zip",
-        mime="application/zip"
-    )
+    # Entrega o ZIP
+    with open(zip_path, "rb") as f:
+        st.download_button(
+            label="💾 Exportar dados (ZIP)",
+            data=f.read(),
+            file_name="dados_produtividade.zip",
+            mime="application/zip"
+        )
 
 def inserir_ponto_manual():   
     with st.form("Inserir ponto (manual)"):
@@ -312,7 +322,7 @@ def inserir_produtividade():
         
         if st.button("Salvar alterações"):
             st.success("Dados de produtividade atualizados.")
-            st.experimental_rerun()
+            st.rerun()
 
     if st.session_state.get('modo_insercao') == 'manual':
         inserir_ponto_manual()
@@ -401,9 +411,6 @@ def inserir_produtividade():
                 st.success("Área total definida!")
                 time.sleep(0.3)
                 st.rerun()
-
-if __name__ == "__main__":
-    main()
 
 # Função para salvar dados exportados no diretório temporário da nuvem Streamlit
 def salvar_no_streamlit_cloud():
