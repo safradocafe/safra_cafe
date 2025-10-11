@@ -12,11 +12,11 @@ st.caption("Sistema avançado de geotecnologias para Cafeicultura de Precisão")
 
 st.markdown(
     """
-    Este protótipo integra **amostras geolocalizadas de produtividade**, 
-    **imagens Sentinel-2 (MSI)** via Google Earth Engine e **Machine Learning** para:
-    - Mapa de variabilidade espacial da produtividade  
-    - Monitoramento por índices espectrais (NDVI, NDRE, CCCI, GNDVI, NDMI, MSAVI2, NBR, TWI2, NDWI)  
-    - Análise temporal e previsão de safra
+    **Este é um protótipo que integra amostras geolocalizadas de produtividade, 
+    imagens Sentinel-2 (MSI) via Google Earth Engine e Machine Learning para**:
+    - gerar mapas de variabilidade espacial da produtividade;  
+    - monitorar áreas de produção com índices espectrais (NDVI, NDRE, CCCI, GNDVI, NDMI, MSAVI2, NBR, TWI2, NDWI)  
+    - e realizar análises temporais e previsão de safra.
     """
 )
 
