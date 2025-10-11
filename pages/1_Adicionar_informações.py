@@ -314,42 +314,6 @@ def inserir_produtividade():
             st.success("Dados de produtividade atualizados.")
             st.experimental_rerun()
 
-def main():
-    st.markdown("<h3>📋 Adicionar informações</h3>", unsafe_allow_html=True)
-
-    st.markdown("""
-    ##### 1️⃣ Área amostral
-    - **Opção 1:** Faça upload de arquivo `.gpkg` com **polígono da área**.
-    - **Opção 2:** Desenhe diretamente no mapa:
-        1. Clique em **"Área amostral"**.
-        2. Clique no ícone de **pentágono** no mapa.
-        3. Desenhe a áera total seguindo o mesmo procedimento
-        4. Para reiniciar o desenho, clique em **"Apagar"**.
-    """)
-
-    st.markdown("""
-    ##### 2️⃣ Dados de produtividade
-    - **Opção 1:** Faça upload de arquivo `.gpkg` com **pontos de produtividade** (2 pontos/ha).
-    - **Opção 2:** Insira manualmente no mapa.
-    - Caso **não tenha** a grade amostral de pontos, clique em **"Gerar pontos automaticamente"**.
-    """)
-
-    st.warning("""
-    ⚠️ **Atenção:**  
-    O sistema funciona apenas com **2 pontos por hectare**, valor mínimo recomendado por pesquisas científicas para a Cafeicultura de Precisão.
-    """)
-
-    st.info("""
-    ℹ️ **Observação:**  
-    Os valores de produtividade podem ser inseridos em **Latas**, **Litros** ou **Quilos (Kg)**.  
-    Se forem inseridos em *Latas* ou *Litros*, o sistema converte automaticamente para **Kg**, conforme a literatura científica.
-    """)
-
-    st.markdown("""
-    ##### 3️⃣ Finalizar
-    Após inserir **todos os dados**, clique em **"Salvar dados"**.
-    """)
-
     if st.session_state.get('modo_insercao') == 'manual':
         inserir_ponto_manual()
         return
