@@ -1,6 +1,5 @@
 import os
 import glob
-import io
 import numpy as np
 import geopandas as gpd
 import streamlit as st
@@ -15,13 +14,6 @@ from matplotlib.colors import Normalize
 from scipy.spatial import cKDTree
 from scipy.interpolate import griddata, Rbf
 import warnings
-
-# Tenta krigagem (opcional)
-try:
-    from pykrige.ok import OrdinaryKriging
-    KRIGING_AVAILABLE = True
-except Exception:
-    KRIGING_AVAILABLE = False
 
 st.set_page_config(layout="wide")
 st.markdown("""
@@ -115,18 +107,6 @@ METHODS = {
     'nearest':{'function': nearest_interpolation,'description': 'Vizinho Mais Próximo'},
     'linear': {'function': linear_interpolation, 'description': 'Interpolação Linear'},
 }
-
-if KRIGING_AVAILABLE:
-    def kriging_interpolation(xyz, xi, yi):
-        OK = OrdinaryKriging(
-            xyz[:, 0], xyz[:, 1], xyz[:, 2],
-            variogram_model='spherical',
-            nlags=6,
-            weight=True
-        )
-        zi, _ = OK.execute('grid', xi.flatten(), yi.flatten())
-        return zi.reshape(xi.shape)
-    METHODS['kriging'] = {'function': kriging_interpolation, 'description': 'Krigagem Ordinária'}
 
 # -------------------------------
 # UI – Controles
