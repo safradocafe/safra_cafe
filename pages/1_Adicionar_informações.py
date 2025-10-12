@@ -391,6 +391,7 @@ with col2:
 
 # ---- Salvar no /tmp do container (opcional) ----
 def salvar_no_streamlit_cloud():
+    # validações mínimas
     if st.session_state.get("gdf_poligono") is None:
         st.warning("⚠️ Defina a área amostral antes de salvar!")
         return
@@ -400,23 +401,43 @@ def salvar_no_streamlit_cloud():
         st.warning("⚠️ Parâmetros de densidade e produtividade não definidos!")
         return
 
-    temp_dir = "/tmp/streamlit_dados"
-    os.makedirs(temp_dir, exist_ok=True)
+    # diretório temporário no container (volátil: zera quando reinicia)
+    base_dir = "/tmp/streamlit_dados"
+    os.makedirs(base_dir, exist_ok=True)
 
-    # Área amostral
-    st.session_state.gdf_poligono.to_file(f"{temp_dir}/area_amostral.gpkg", driver="GPKG")
+    # usa subpasta por salvamento para não sobrescrever
+    carimbo = time.strftime("%Y%m%d-%H%M%S")
+    save_dir = os.path.join(base_dir, f"salvamento-{carimbo}")
+    os.makedirs(save_dir, exist_ok=True)
 
-    # Pontos (se houver)
+    # salva área amostral
+    area_path = os.path.join(save_dir, "area_amostral.gpkg")
+    st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
+
+    # salva pontos se houver
+    pontos_path = None
     if st.session_state.get("gdf_pontos") is not None and not st.session_state.gdf_pontos.empty:
-        st.session_state.gdf_pontos.to_file(f"{temp_dir}/pontos_produtividade.gpkg", driver="GPKG")
+        pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
+        st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
 
-    # Parâmetros
+    # salva parâmetros
+    params_path = os.path.join(save_dir, "parametros_area.json")
     parametros = {
-        'densidade_pes_ha': st.session_state.densidade_plantas,
-        'produtividade_media_sacas_ha': st.session_state.produtividade_media
+        "densidade_pes_ha": st.session_state.densidade_plantas,
+        "produtividade_media_sacas_ha": st.session_state.produtividade_media,
     }
-    with open(f"{temp_dir}/parametros_area.json", "w") as f:
+    with open(params_path, "w") as f:
         json.dump(parametros, f)
 
-        st.success("✅ Arquivos salvos temporariamente em /tmp (container).")
-        st.info("Esses arquivos podem ser usados pelas próximas etapas.")
+    # guarda o caminho para uso nas próximas abas, se quiser
+    st.session_state["tmp_save_dir"] = save_dir
+    st.session_state["tmp_area_path"] = area_path
+    if pontos_path:
+        st.session_state["tmp_pontos_path"] = pontos_path
+    st.session_state["tmp_params_path"] = params_path
+
+    st.success("✅ Arquivos salvos temporariamente no container (/tmp).")
+    st.info(f"Diretório desta execução: {save_dir}")
+
+if st.button("☁️ Salvar dados na nuvem"):
+    salvar_no_streamlit_cloud()
