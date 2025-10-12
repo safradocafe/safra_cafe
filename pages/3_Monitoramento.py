@@ -1,5 +1,3 @@
-# pages/3_Monitoramento.py
-
 import os
 import io
 import json
@@ -66,7 +64,6 @@ def load_area_from_tmp():
     if not latest:
         return None, None
     area_path = os.path.join(latest, "area_amostral.gpkg")
-    pontos_path = os.path.join(latest, "pontos_produtividade.gpkg")
     if not os.path.exists(area_path):
         return None, None
     gdf_area = gpd.read_file(area_path)
@@ -78,8 +75,13 @@ def load_area_from_tmp():
 # EE init (com variável de ambiente)
 # =========================
 def ensure_ee_init():
-    if ee.data._credentials:  # já inicializado
+    try:
+        # se já inicializado, retorna
+        _ = ee.Number(1).getInfo()
         return
+    except Exception:
+        pass
+
     key_json = os.environ.get("GEE_SA_KEY_JSON", "")
     if not key_json:
         st.error("Credenciais do Google Earth Engine não encontradas. Configure a variável de ambiente **GEE_SA_KEY_JSON** no Cloud Run.")
@@ -145,7 +147,7 @@ if area_opt.startswith("Usar"):
 else:
     up = st.file_uploader("Carregue um polígono (GPKG)", type=["gpkg"])
     if up:
-        tmp = f"/tmp/_poly_upload.gpkg"
+        tmp = "/tmp/_poly_upload.gpkg"
         with open(tmp, "wb") as f:
             f.write(up.getbuffer())
         gdf_area = gpd.read_file(tmp)
@@ -166,9 +168,8 @@ except Exception as e:
 # Funções EE
 # =========================
 def add_indices(img, wanted):
-    """Adiciona apenas os índices pedidos, sem usar operações client-side."""
-    def nd(x, y):  # normalized difference helper
-        return img.normalizedDifference([x, y])
+    def nd(a, b):
+        return img.normalizedDifference([a, b])
     out = img
     if "NDVI" in wanted:
         out = out.addBands(nd("B8", "B4").rename("NDVI"))
@@ -179,7 +180,7 @@ def add_indices(img, wanted):
     if "CCCI" in wanted:
         ndre = nd("B8", "B5")
         ndvi = nd("B8", "B4")
-        out = out.addBands(ndre.divide(ndvi).rename("CCCI"))
+        out  = out.addBands(ndre.divide(ndvi).rename("CCCI"))
     if "MSAVI2" in wanted:
         msavi2 = img.expression(
             "(2*NIR + 1 - sqrt((2*NIR + 1)**2 - 8*(NIR - RED)))/2",
@@ -196,8 +197,32 @@ def add_indices(img, wanted):
         out = out.addBands(nd("B9", "B8").rename("TWI2"))
     return out
 
+def time_series_mean(ic, ee_geom, indices, scale=10):
+    # Por imagem, computa média dos índices no polígono e salva 'date' (YYYY-MM-dd)
+    def per_image(img):
+        stats = ee.Dictionary({})
+        for name in indices:
+            mean_val = img.select(name).reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=ee_geom,
+                scale=scale,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get(name)
+            stats = stats.set(name, mean_val)
+        date_str = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd')
+        return ee.Feature(None, stats.set('date', date_str))
+
+    fc = ee.FeatureCollection(ic.map(per_image))
+    dates = fc.aggregate_array('date').getInfo()
+    data = {'date': pd.to_datetime(dates)}
+    for name in indices:
+        data[name] = fc.aggregate_array(name).getInfo()
+    df = pd.DataFrame(data).sort_values('date').reset_index(drop=True)
+    return df
+
 def ee_tilelayer_from_image(image, vis):
-    """Retorna dict com URL de tiles para usar em Folium.TileLayer."""
+    """Retorna URL de tiles para usar em Folium.TileLayer."""
     m = ee.Image(image).getMapId(vis)
     return m["tile_fetcher"].url_format
 
@@ -215,20 +240,25 @@ if "mon_bounds" not in st.session_state:
 # Processamento (uma vez) e guarda em sessão
 # =========================
 def do_process():
-    # Coleção Sentinel-2 SR harmonizada
-    col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    if len(indices_sel) == 0:
+        st.warning("Selecione pelo menos um índice.")
+        st.stop()
+
+    col = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
            .filterBounds(ee_poly.geometry())
            .filterDate(ee.Date(str(start)), ee.Date(str(end)))
-           .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_thr))
+           .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud_thr))
            .map(lambda im: add_indices(im, indices_sel)))
 
-    # Se não houver imagens, aborta educadamente
-    nimgs = col.size().getInfo()
-    if nimgs == 0:
-        st.warning("Nenhuma imagem encontrada no período/área com esse limite de nuvem.")
-        return
+    count = col.size().getInfo()
+    if count == 0:
+        st.warning("Não há imagens disponíveis no período/limite de nuvens escolhido.")
+        st.stop()
 
-    # Para o mapa: usa mediana no período (leve e estável)
+    # Série temporal (média no polígono)
+    df_ts = time_series_mean(col, ee_poly, indices_sel, scale=10)
+
+    # Imagem representativa para visualização no mapa (mediana no período)
     median = col.median().clip(ee_poly)
 
     # Gera URL de tiles por índice selecionado
@@ -237,36 +267,13 @@ def do_process():
         vis = INDEX_VIS[idx]
         tiles[idx] = ee_tilelayer_from_image(median.select(idx), vis)
 
-    # Série temporal (média do índice no polígono por data)
-    # Monta datas únicas
-    dates = (col.aggregate_array("system:time_start").map(lambda t: ee.Date(t).format("YYYY-MM-dd"))).distinct().getInfo()
-    dates = sorted(list(set(dates)))
-    rows = []
-    for d in dates:
-        # Mediana diária (ou mosaico por dia)
-        day_coll = col.filterDate(ee.Date(d), ee.Date(d).advance(1, "day"))
-        if day_coll.size().getInfo() == 0:
-            continue
-        day_img = day_coll.median().clip(ee_poly)
-        row = {"date": d}
-        for idx in indices_sel:
-            try:
-                val = (day_img.select(idx)
-                       .reduceRegion(ee.Reducer.mean(), geometry=ee_poly, scale=10, maxPixels=1e9)
-                       .get(idx).getInfo())
-            except Exception:
-                val = None
-            row[idx] = val
-        rows.append(row)
-
-    df = pd.DataFrame(rows).sort_values("date")
-
     # Bounds do polígono (para folium)
-    g = gdf_area.geometry.unary_union.envelope.bounds  # (minx,miny,maxx,maxy)
-    bounds = [[g[1], g[0]], [g[3], g[2]]]
+    b = gdf_area.geometry.unary_union.envelope.bounds  # (minx,miny,maxx,maxy)
+    bounds = [[b[1], b[0]], [b[3], b[2]]]
 
+    # Guarda no estado
     st.session_state["mon_tiles"]  = tiles
-    st.session_state["mon_series"] = df
+    st.session_state["mon_series"] = df_ts
     st.session_state["mon_bounds"] = bounds
 
 if btn:
@@ -289,7 +296,7 @@ if tiles:
     center = [gdf_area.geometry.unary_union.centroid.y, gdf_area.geometry.unary_union.centroid.x]
     m = folium.Map(location=center, zoom_start=16, tiles="OpenStreetMap")
 
-    # Base Satélite opcional
+    # Base Satélite
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri", name="Satélite", overlay=False, control=True
@@ -330,6 +337,7 @@ if tiles:
         plt.tight_layout()
         st.pyplot(fig, use_container_width=True)
     else:
-        st.info("Sem pontos suficientes para montar a série temporal nesse período.")
+        st.info("Sem dados suficientes para montar a série temporal nesse período.")
 else:
     st.info("Aguardando processamento. Defina período/índices e clique em **Processar**.")
+
