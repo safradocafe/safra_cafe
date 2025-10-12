@@ -24,9 +24,9 @@ st.markdown("""
 
 # ---- Estado inicial ----
 for key in [
-    'gdf_poligono', 'gdf_pontos', 'gdf_poligono_total', 'unidade_selecionada',
+    'gdf_poligono', 'gdf_pontos', 'unidade_selecionada',
     'densidade_plantas', 'produtividade_media', 'mapa_data', 'modo_insercao',
-    'drawing_mode'  # usar sempre esta chave
+    'drawing_mode' 
 ]:
     if key not in st.session_state:
         st.session_state[key] = 'kg' if key == 'unidade_selecionada' else None
@@ -83,13 +83,6 @@ def create_map():
         position='topleft'
     )
     draw.add_to(m)
-
-    if st.session_state.gdf_poligono is not None:
-        folium.GeoJson(
-            st.session_state.gdf_poligono,
-            name="Área Amostral",
-            style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
-        ).add_to(m)
 
     if st.session_state.gdf_poligono_total is not None:
         folium.GeoJson(
@@ -191,24 +184,26 @@ def salvar_pontos():
     st.success("✅ Dados dos pontos preparados para exportação!")
 
 def exportar_dados():
-    if st.session_state.gdf_poligono is None or st.session_state.gdf_poligono_total is None:
-        st.warning("⚠️ É necessário definir ambas as áreas (amostral e total) antes de exportar!")
+    if st.session_state.gdf_poligono is None:
+        st.warning("⚠️ Defina a área amostral antes de exportar!")
         return
 
     tmp_dir = "/tmp/export_zip"
     os.makedirs(tmp_dir, exist_ok=True)
 
-    poligono_path = os.path.join(tmp_dir, "area_poligono.gpkg")
-    poligono_total_path = os.path.join(tmp_dir, "area_total_poligono.gpkg")
+    poligono_path = os.path.join(tmp_dir, "area_amostral.gpkg")
     pontos_path = os.path.join(tmp_dir, "pontos_produtividade.gpkg")
     params_path = os.path.join(tmp_dir, "parametros_area.json")
     zip_path = os.path.join(tmp_dir, "dados_produtividade.zip")
 
+    # Área amostral
     st.session_state.gdf_poligono.to_file(poligono_path, driver="GPKG")
-    st.session_state.gdf_poligono_total.to_file(poligono_total_path, driver="GPKG")
+
+    # Pontos (se houver)
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
 
+    # Parâmetros
     parametros = {
         'densidade_pes_ha': st.session_state.densidade_plantas,
         'produtividade_media_sacas_ha': st.session_state.produtividade_media
@@ -216,9 +211,9 @@ def exportar_dados():
     with open(params_path, "w") as f:
         json.dump(parametros, f)
 
+    # Monta o ZIP
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        zipf.write(poligono_path, arcname="area_poligono.gpkg")
-        zipf.write(poligono_total_path, arcname="area_total_poligono.gpkg")
+        zipf.write(poligono_path, arcname="area_amostral.gpkg")
         if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
             zipf.write(pontos_path, arcname="pontos_produtividade.gpkg")
         zipf.write(params_path, arcname="parametros_area.json")
@@ -341,19 +336,11 @@ with col1:
     if st.button("💾 Salvar pontos"):
         salvar_pontos()
 
-    if st.button("▶️ Área total"):
-        st.session_state.drawing_mode = 'total'
-        st.session_state.modo_insercao = None
-        st.success("Modo desenho ativado: Área Total - Desenhe no mapa")
-        time.sleep(0.3)
-        st.rerun()
-
     if st.button("💾 Exportar dados"):
         exportar_dados()
 
     if st.button("🗑️ Limpar área"):
-        st.session_state.gdf_poligono = None
-        st.session_state.gdf_poligono_total = None
+        st.session_state.gdf_poligono = None        
         st.session_state.gdf_pontos = None
         st.success("Áreas limpas!")
 
@@ -382,20 +369,10 @@ with col2:
             time.sleep(0.3)
             st.rerun()
 
-        elif st.session_state.get('drawing_mode') == 'total':
-            st.session_state.gdf_poligono_total = gdf
-            st.session_state.drawing_mode = None
-            st.success("Área total definida!")
-            time.sleep(0.3)
-            st.rerun()
-
 # ---- Salvar no /tmp do container (opcional) ----
 def salvar_no_streamlit_cloud():
-    if st.session_state.get("gdf_poligono") is None or \
-       st.session_state.get("gdf_poligono_total") is None or \
-       st.session_state.get("gdf_pontos") is None or \
-       st.session_state.gdf_pontos.empty:
-        st.warning("⚠️ Certifique-se de que áreas e pontos foram definidos!")
+    if st.session_state.get("gdf_poligono") is None:
+        st.warning("⚠️ Defina a área amostral antes de salvar!")
         return
 
     if st.session_state.get("densidade_plantas") is None or \
@@ -406,10 +383,14 @@ def salvar_no_streamlit_cloud():
     temp_dir = "/tmp/streamlit_dados"
     os.makedirs(temp_dir, exist_ok=True)
 
-    st.session_state.gdf_poligono.to_file(f"{temp_dir}/area_poligono.gpkg", driver="GPKG")
-    st.session_state.gdf_poligono_total.to_file(f"{temp_dir}/area_total_poligono.gpkg", driver="GPKG")
-    st.session_state.gdf_pontos.to_file(f"{temp_dir}/pontos_produtividade.gpkg", driver="GPKG")
+    # Área amostral
+    st.session_state.gdf_poligono.to_file(f"{temp_dir}/area_amostral.gpkg", driver="GPKG")
 
+    # Pontos (se houver)
+    if st.session_state.get("gdf_pontos") is not None and not st.session_state.gdf_pontos.empty:
+        st.session_state.gdf_pontos.to_file(f"{temp_dir}/pontos_produtividade.gpkg", driver="GPKG")
+
+    # Parâmetros
     parametros = {
         'densidade_pes_ha': st.session_state.densidade_plantas,
         'produtividade_media_sacas_ha': st.session_state.produtividade_media
@@ -417,8 +398,4 @@ def salvar_no_streamlit_cloud():
     with open(f"{temp_dir}/parametros_area.json", "w") as f:
         json.dump(parametros, f)
 
-    st.success("✅ Arquivos salvos temporariamente em /tmp (container).")
-    st.info("Esses arquivos podem ser usados pelas próximas páginas.")
-
-if st.button("☁️ Salvar dados na nuvem"):
-    salvar_no_streamlit_cloud()
+    st.success("✅ Arquivos salvos temporariamente para uso nas próximas etapas.")
