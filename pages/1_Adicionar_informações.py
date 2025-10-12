@@ -60,39 +60,33 @@ def create_map():
     m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri',
-        name='Satélite',
-        overlay=False,
-        control=True
+        attr='Esri', name='Satélite', overlay=False, control=True
     ).add_to(m)
 
     draw = folium.plugins.Draw(
         draw_options={
-            'polyline': False,
-            'rectangle': True,
-            'circle': False,
-            'circlemarker': False,
-            'marker': False,
-            'polygon': {
-                'allowIntersection': False,
-                'showArea': True,
-                'repeatMode': False
-            }
+            'polyline': False, 'rectangle': True, 'circle': False,
+            'circlemarker': False, 'marker': False,
+            'polygon': {'allowIntersection': False, 'showArea': True, 'repeatMode': False}
         },
-        export=False,
-        position='topleft'
+        export=False, position='topleft'
     )
     draw.add_to(m)
 
+    # MOSTRAR ÁREA AMOSTRAL (voltou)
+    if st.session_state.gdf_poligono is not None:
+        folium.GeoJson(
+            st.session_state.gdf_poligono,
+            name="Área Amostral",
+            style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
+        ).add_to(m)
+
+    # MOSTRAR PONTOS
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
                 location=[row['latitude'], row['longitude']],
-                radius=5,
-                color="green",
-                fill=True,
-                fill_color="green",
-                fill_opacity=0.7,
+                radius=5, color="green", fill=True, fill_color="green", fill_opacity=0.7,
                 popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']}"
             ).add_to(m)
 
@@ -112,37 +106,70 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
         with open(temp_file, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
+        # Lê o GPKG (primeira camada por padrão)
         gdf = gpd.read_file(temp_file)
         os.remove(temp_file)
 
+        # Normaliza CRS para WGS84 (EPSG:4326)
+        if gdf.crs is None:
+            # Se não houver CRS, vamos assumir WGS84 (se sua fonte SEMPRE estiver em WGS84)
+            gdf = gdf.set_crs(epsg=4326)
+        elif gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+
         if tipo == 'amostral':
-            if gdf.empty or not any(gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])):
-                st.error("❌ O arquivo da área amostral deve conter polígonos")
+            # Deve ser polígono
+            if gdf.empty or not gdf.geom_type.isin(['Polygon', 'MultiPolygon']).any():
+                st.error("❌ O arquivo da área amostral deve conter polígonos.")
                 return None
-            st.session_state.gdf_poligono = gdf
+
+            # Guarda só a geometria (limpo)
+            st.session_state.gdf_poligono = gdf[['geometry']]
             st.success("✅ Área amostral carregada com sucesso!")
+            return gdf
 
         elif tipo == 'pontos':
+            # Deve ser ponto
+            if gdf.empty or not gdf.geom_type.isin(['Point', 'MultiPoint']).any():
+                st.error("❌ O arquivo de pontos deve conter geometrias do tipo Ponto.")
+                return None
+
+            # Validação estrita de colunas
             required_cols = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
-            faltando = [col for col in required_cols if col not in gdf.columns]
+            faltando = [c for c in required_cols if c not in gdf.columns]
             if faltando:
-                st.error(f"❌ Faltam colunas obrigatórias: {', '.join(faltando)}")
+                st.error("❌ Arquivo inválido. Faltam as colunas obrigatórias: " + ", ".join(faltando))
+                st.info("Necessário: Code, maduro_kg, latitude, longitude e geometry (pontos).")
                 return None
-            if not any(gdf.geometry.type.isin(['Point', 'MultiPoint'])):
-                st.error("❌ O arquivo de pontos deve conter geometrias do tipo Ponto")
+
+            # Garante tipos corretos
+            # (se vierem como string, converte; se não der, erro claro)
+            try:
+                gdf['maduro_kg'] = pd.to_numeric(gdf['maduro_kg'])
+                gdf['latitude']  = pd.to_numeric(gdf['latitude'])
+                gdf['longitude'] = pd.to_numeric(gdf['longitude'])
+            except Exception:
+                st.error("❌ As colunas maduro_kg, latitude e longitude precisam ser numéricas.")
                 return None
-            if gdf.crs != 'EPSG:4326':
-                gdf = gdf.to_crs('EPSG:4326')
-                gdf['latitude'] = gdf.geometry.y
-                gdf['longitude'] = gdf.geometry.x
+
+            # Recalcula latitude/longitude a partir da geometria para evitar inconsistência
+            gdf['latitude']  = gdf.geometry.y
+            gdf['longitude'] = gdf.geometry.x
+
+            # Checagem final: valores plausíveis
+            if not ((gdf['latitude'].between(-90, 90)) & (gdf['longitude'].between(-180, 180))).all():
+                st.error("❌ Latitude/Longitude fora do intervalo esperado (-90..90 / -180..180).")
+                return None
+
+            # Mantém demais campos como estão; não cria colunas novas (requisito de “não relaxar”)
             st.session_state.gdf_pontos = gdf
             st.success(f"✅ {len(gdf)} pontos carregados com sucesso!")
-            st.info(f"Colunas disponíveis: {', '.join(gdf.columns)}")
-
-        return gdf
+            st.info(f"Colunas: {', '.join(gdf.columns)}")
+            return gdf
 
     except Exception as e:
-        st.error(f"❌ Erro ao processar arquivo: {str(e)}")
+        st.error("❌ Erro ao processar arquivo (detalhes abaixo).")
+        st.exception(e)
         return None
 
 def gerar_pontos_automaticos():
