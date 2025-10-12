@@ -1,12 +1,10 @@
+
 import os
 import glob
-import time
 import numpy as np
-import pandas as pd
 import geopandas as gpd
 import streamlit as st
 import folium
-from shapely.geometry import shape
 from streamlit_folium import st_folium
 from folium.plugins import HeatMap
 
@@ -24,11 +22,9 @@ header, footer {visibility:hidden;}
 def _find_latest_save_dir(base="/tmp/streamlit_dados"):
     if not os.path.isdir(base):
         return None
-    # pega pastas "salvamento-*"
     candidates = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
     if not candidates:
         return None
-    # ordena por mtime desc
     candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return candidates[0]
 
@@ -68,14 +64,20 @@ def _load_area_and_points():
         if gdf_pontos.crs is None or gdf_pontos.crs.to_epsg() != 4326:
             gdf_pontos = gdf_pontos.set_crs(4326) if gdf_pontos.crs is None else gdf_pontos.to_crs(4326)
 
-        # valida colunas exigidas
-        required = ["fid", "Code", "maduro_kg", "latitude", "longitude", "geometry"]
+        # valida colunas exigidas (sem 'fid')
+        required = ["Code", "maduro_kg", "latitude", "longitude", "geometry"]
         faltando = [c for c in required if c not in gdf_pontos.columns]
         if faltando:
             st.error("Arquivo de pontos encontrado, mas faltam colunas obrigatórias: " + ", ".join(faltando))
             gdf_pontos = None
 
     return gdf_area, gdf_pontos, save_dir
+
+def _fmt_num(v, nd=6):
+    try:
+        return f"{float(v):.{nd}f}"
+    except Exception:
+        return str(v)
 
 # -------------------------------
 # UI – Controles
@@ -121,7 +123,6 @@ if show_area:
 
 # HeatMap com pesos em maduro_kg
 if gdf_pontos is not None and not gdf_pontos.empty:
-    # normaliza pesos (evita tudo ficar saturado)
     vals = gdf_pontos["maduro_kg"].astype(float).values
     vmin, vmax = np.nanmin(vals), np.nanmax(vals)
     if vmax == vmin:
@@ -150,21 +151,22 @@ if gdf_pontos is not None and not gdf_pontos.empty:
     # pontos clicáveis (opcional)
     if show_points:
         for _, row in gdf_pontos.iterrows():
+            lat = row.get("latitude")
+            lon = row.get("longitude")
+            if not (np.isfinite(lat) and np.isfinite(lon)):
+                continue
+            popup_html = (
+                f"<b>Code:</b> {row.get('Code','-')}"
+                f"<br><b>Produtividade (kg):</b> {row.get('maduro_kg','-')}"
+                f"<br><b>Lat/Lon:</b> {_fmt_num(lat,6)}, {_fmt_num(lon,6)}"
+            )
             folium.CircleMarker(
-                location=[row["latitude"], row["longitude"]],
+                location=[lat, lon],
                 radius=4,
                 color="green",
                 fill=True,
                 fill_opacity=0.8,
-                popup=folium.Popup(
-                    html=(
-                        f"<b>FID:</b> {row.get('fid', '-')}"
-                        f"<br><b>Code:</b> {row.get('Code', '-')}"
-                        f"<br><b>Produtividade (kg):</b> {row.get('maduro_kg', '-')}"
-                        f"<br><b>Lat/Lon:</b> {row.get('latitude', '-'):.6f}, {row.get('longitude', '-'):.6f}"
-                    ),
-                    max_width=300
-                )
+                popup=folium.Popup(popup_html, max_width=300)
             ).add_to(m)
 else:
     st.warning("⚠️ Pontos de produtividade não encontrados. O HeatMap será ocultado.")
