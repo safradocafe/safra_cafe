@@ -1,14 +1,13 @@
 import os
 import glob
 import io
-import base64
 import numpy as np
 import geopandas as gpd
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
 from folium.plugins import HeatMap
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 from shapely.ops import unary_union
 from matplotlib import pyplot as plt
 from matplotlib import cm
@@ -111,10 +110,10 @@ def linear_interpolation(xyz, xi, yi):
     return griddata((xyz[:, 0], xyz[:, 1]), xyz[:, 2], (xi, yi), method='linear')
 
 METHODS = {
-    'idw':    {'function': idw_interpolation,   'description': 'Inverse Distance Weighting'},
-    'spline': {'function': spline_interpolation,'description': 'Spline (RBF)'},
+    'idw':    {'function': idw_interpolation,    'description': 'Inverse Distance Weighting'},
+    'spline': {'function': spline_interpolation, 'description': 'Spline (RBF)'},
     'nearest':{'function': nearest_interpolation,'description': 'Vizinho Mais Próximo'},
-    'linear': {'function': linear_interpolation,'description': 'Interpolação Linear'},
+    'linear': {'function': linear_interpolation, 'description': 'Interpolação Linear'},
 }
 
 if KRIGING_AVAILABLE:
@@ -175,7 +174,6 @@ pontos_utm = gdf_pontos.to_crs(epsg=epsg_utm)
 
 # bounds e grid
 xmin, ymin, xmax, ymax = area_utm.total_bounds
-# margem pequena pra evitar corte visual
 pad = grid_res_m * 2
 xmin, ymin, xmax, ymax = xmin - pad, ymin - pad, xmax + pad, ymax + pad
 
@@ -199,10 +197,8 @@ with warnings.catch_warnings():
 # -------------------------------
 poly = unary_union(area_utm.geometry)  # pode ser MultiPolygon
 mask = np.zeros_like(Z, dtype=bool)
-# checa cada célula pelo centro do pixel
 px = xi_grid + (grid_res_m / 2.0)
 py = yi_grid + (grid_res_m / 2.0)
-# vetoriza contain via reshape (loop simples por linhas para memória ok)
 for i in range(py.shape[0]):
     pts = [Point(x, y) for x, y in zip(px[i, :], py[i, :])]
     mask[i, :] = np.array([poly.contains(pt) for pt in pts])
@@ -220,19 +216,14 @@ if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
 norm = Normalize(vmin=vmin, vmax=vmax, clip=True)
 cmap = cm.get_cmap(cmap_name)
 
-# cria imagem RGBA com alpha em nan
 rgba = cmap(norm(Z_masked))
 rgba[..., 3] = np.where(np.isnan(Z_masked), 0.0, 0.75)  # transparência fora do polígono
 
-# salva PNG em memória e também em /tmp (útil p/ depuração)
-buf = io.BytesIO()
-plt.imsave(buf, rgba, format="png", origin="lower")
-buf.seek(0)
+# salva PNG do overlay
 tmp_png_path = "/tmp/interp_overlay.png"
 plt.imsave(tmp_png_path, rgba, format="png", origin="lower")
 
 # bounds para overlay (em lat/lon)
-# canto inferior esquerdo (xmin, ymin), canto superior direito (xmax, ymax)
 bb_ll = gpd.GeoSeries([Point(xmin, ymin)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
 bb_ur = gpd.GeoSeries([Point(xmax, ymax)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
 bounds = [[bb_ll.y, bb_ll.x], [bb_ur.y, bb_ur.x]]
@@ -257,7 +248,7 @@ if show_area:
 
 # overlay da interpolação
 overlay = folium.raster_layers.ImageOverlay(
-    image=tmp_png_path,  # arquivo local gerado
+    image=tmp_png_path,
     bounds=bounds,
     opacity=1.0,
     name=f"Interpolação ({METHODS[method_key]['description']})",
@@ -266,23 +257,11 @@ overlay = folium.raster_layers.ImageOverlay(
 )
 overlay.add_to(m)
 
-# legenda (branca colormap)
-try:
-    import branca.colormap as bcm
-    colormap = bcm.LinearColormap(
-        colors=[cm.get_cmap(cmap_name)(i) for i in np.linspace(0, 1, 256)],
-        vmin=float(vmin), vmax=float(vmax)
-    )
-    colormap.caption = "Produtividade (kg)"
-    colormap.add_to(m)
-except Exception:
-    pass
-
 # heatmap (opcional, leve)
 if add_heat:
-    vals = gdf_pontos["maduro_kg"].astype(float).values
-    mn, mx = np.nanmin(vals), np.nanmax(vals)
-    weights = np.ones_like(vals) if mx == mn else (vals - mn) / (mx - mn)
+    vals_h = gdf_pontos["maduro_kg"].astype(float).values
+    mn, mx = np.nanmin(vals_h), np.nanmax(vals_h)
+    weights = np.ones_like(vals_h) if mx == mn else (vals_h - mn) / (mx - mn)
     heat_data = [
         [row["latitude"], row["longitude"], float(w)]
         for (_, row), w in zip(gdf_pontos.iterrows(), weights)
@@ -315,6 +294,21 @@ if show_points:
         ).add_to(m)
 
 folium.LayerControl(collapsed=False).add_to(m)
+
+# -------------------------------
+# Legenda (colorbar) no sidebar
+# -------------------------------
+with st.sidebar:
+    st.subheader("Legenda")
+    fig, ax = plt.subplots(figsize=(3.8, 0.35))
+    fig.subplots_adjust(bottom=0.5)
+    cb1 = plt.colorbar(
+        cm.ScalarMappable(norm=norm, cmap=cmap),
+        cax=ax, orientation='horizontal'
+    )
+    cb1.set_label('Produtividade (kg)', fontsize=9)
+    cb1.ax.tick_params(labelsize=8)
+    st.pyplot(fig, use_container_width=True)
 
 # Render
 st.markdown(f"**Origem dos dados:** `{base_dir or 'desconhecida'}`")
