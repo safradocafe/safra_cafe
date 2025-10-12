@@ -166,24 +166,34 @@ except Exception as e:
 # Funções EE
 # =========================
 def add_indices(img, wanted):
+    """Adiciona apenas os índices pedidos, sem usar operações client-side."""
+    def nd(x, y):  # normalized difference helper
+        return img.normalizedDifference([x, y])
     out = img
-    band = {b: img.select(b) for b in ["B3","B4","B5","B8","B11","B12","B9"] if b in img.bandNames().getInfo()}
-    def nd(x,y): return img.normalizedDifference([x,y])
-
-    if "NDVI"  in wanted:   out = out.addBands(nd("B8","B4").rename("NDVI"))
-    if "GNDVI" in wanted:   out = out.addBands(nd("B8","B3").rename("GNDVI"))
-    if "NDRE"  in wanted:   out = out.addBands(nd("B8","B5").rename("NDRE"))
-    if "CCCI"  in wanted:   out = out.addBands(nd("B8","B5").divide(nd("B8","B4")).rename("CCCI"))
+    if "NDVI" in wanted:
+        out = out.addBands(nd("B8", "B4").rename("NDVI"))
+    if "GNDVI" in wanted:
+        out = out.addBands(nd("B8", "B3").rename("GNDVI"))
+    if "NDRE" in wanted:
+        out = out.addBands(nd("B8", "B5").rename("NDRE"))
+    if "CCCI" in wanted:
+        ndre = nd("B8", "B5")
+        ndvi = nd("B8", "B4")
+        out = out.addBands(ndre.divide(ndvi).rename("CCCI"))
     if "MSAVI2" in wanted:
         msavi2 = img.expression(
-            "(2*NIR + 1 - sqrt((2*NIR + 1)**2 - 8*(NIR-RED)))/2",
+            "(2*NIR + 1 - sqrt((2*NIR + 1)**2 - 8*(NIR - RED)))/2",
             {"NIR": img.select("B8"), "RED": img.select("B4")}
         ).rename("MSAVI2")
         out = out.addBands(msavi2)
-    if "NDWI"  in wanted:   out = out.addBands(nd("B3","B8").rename("NDWI"))
-    if "NDMI"  in wanted:   out = out.addBands(nd("B8","B11").rename("NDMI"))
-    if "NBR"   in wanted:   out = out.addBands(nd("B8","B12").rename("NBR"))
-    if "TWI2"  in wanted:   out = out.addBands(nd("B9","B8").rename("TWI2"))
+    if "NDWI" in wanted:
+        out = out.addBands(nd("B3", "B8").rename("NDWI"))
+    if "NDMI" in wanted:
+        out = out.addBands(nd("B8", "B11").rename("NDMI"))
+    if "NBR" in wanted:
+        out = out.addBands(nd("B8", "B12").rename("NBR"))
+    if "TWI2" in wanted:
+        out = out.addBands(nd("B9", "B8").rename("TWI2"))
     return out
 
 def ee_tilelayer_from_image(image, vis):
