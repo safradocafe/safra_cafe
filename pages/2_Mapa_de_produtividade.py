@@ -131,7 +131,10 @@ if KRIGING_AVAILABLE:
 # -------------------------------
 # UI – Controles
 # -------------------------------
-st.title("🗺️ Mapa de variabilidade da produtividade (interpolação dos dados reais)")
+st.markdown(
+    "<h3 style='margin:0 0 .5rem 0; font-weight:700;'>🗺️ Mapa de variabilidade da produtividade</h3>",
+    unsafe_allow_html=True
+)
 
 with st.sidebar:
     st.subheader("Interpolação")
@@ -142,7 +145,7 @@ with st.sidebar:
         index=1 if 'spline' in METHODS else 0
     )
     grid_res_m = st.slider("Resolução do grid (metros)", 2, 20, 5, 1)
-    cmap_name = st.selectbox("Paleta de cores", ["YlGn", "viridis", "plasma", "inferno", "magma"], index=0)
+    cmap_name = st.selectbox("Paleta de cores", ["YlGn", "viridis", "plasma", "magma"], index=0)
     show_points = st.checkbox("Mostrar pontos", value=True)
     show_area   = st.checkbox("Mostrar polígono da área", value=True)
     add_heat    = st.checkbox("Adicionar HeatMap (rápido)", value=False)
