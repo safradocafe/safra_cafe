@@ -418,4 +418,5 @@ def salvar_no_streamlit_cloud():
     with open(f"{temp_dir}/parametros_area.json", "w") as f:
         json.dump(parametros, f)
 
-    st.success("✅ Arquivos salvos temporariamente para uso nas próximas etapas.")
+        st.success("✅ Arquivos salvos temporariamente em /tmp (container).")
+        st.info("Esses arquivos podem ser usados pelas próximas etapas.")
