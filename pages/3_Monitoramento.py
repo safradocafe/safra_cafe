@@ -29,15 +29,15 @@ st.markdown("<h3 style='margin:0 0 .5rem 0;'>🛰️ Monitoramento com índices 
 # Badges com explicações (resumo do seu texto)
 st.markdown("""
 <div class="badges">
-  <span class="badge"><b>NDVI</b> vigor/verdor da vegetação; útil para água e sanidade</span>
-  <span class="badge"><b>GNDVI</b> sensível a N foliar (banda verde)</span>
-  <span class="badge"><b>NDRE</b> sensível a N/clorofila (red-edge)</span>
-  <span class="badge"><b>CCCI</b> proxy de clorofila (NDRE/NDVI)</span>
-  <span class="badge"><b>MSAVI2</b> reduz influência do solo (LAI/biomassa)</span>
-  <span class="badge"><b>NDWI</b> conteúdo de água na folha (estresse hídrico)</span>
-  <span class="badge"><b>NDMI</b> umidade do dossel (NIR–SWIR1)</span>
-  <span class="badge"><b>NBR</b> sensível a distúrbios/estresse (NIR–SWIR2)</span>
-  <span class="badge"><b>TWI2</b> vapor d’água vs NIR</span>
+  <span class="badge"><b>NDVI</b> vigor vegetativo</span>
+  <span class="badge"><b>GNDVI</b> sensível ao N foliar</span>
+  <span class="badge"><b>NDRE</b> sensível à clorofila</span>
+  <span class="badge"><b>CCCI</b> sensível à clorofila na copa das plantas</span>
+  <span class="badge"><b>MSAVI2</b> reduz a influência do solo</span>
+  <span class="badge"><b>NDWI</b> conteúdo de água na folha</span>
+  <span class="badge"><b>NDMI</b> umidade no dossel</span>
+  <span class="badge"><b>NBR</b> sensível a estresse térmico</span>
+  <span class="badge"><b>TWI2</b> umidade do ar</span>
 </div>
 """, unsafe_allow_html=True)
 st.markdown('<div class="note">Escolha o período, os índices e a área (amostral salva no passo 1 ou um polígono da fazenda) para visualizar no mapa e ver a série temporal (média no polígono).</div>', unsafe_allow_html=True)
@@ -54,16 +54,22 @@ def _find_latest_area():
     area = os.path.join(candidates[0], "area_amostral.gpkg")
     return area if os.path.exists(area) else None
 
+import os, json, ee, streamlit as st
+
 def init_ee():
     try:
-        if "GEE_CREDENTIALS" in st.secrets:
-            creds = dict(st.secrets["GEE_CREDENTIALS"])
-            ee.Initialize(ee.ServiceAccountCredentials(creds["client_email"], key_data=json.dumps(creds)))
+        if "GEE_SA_KEY_JSON" in os.environ:
+            creds_dict = json.loads(os.environ["GEE_SA_KEY_JSON"])
+            ee.Initialize(ee.ServiceAccountCredentials(
+                creds_dict["client_email"],
+                key_data=json.dumps(creds_dict)
+            ))
         else:
-            ee.Initialize()  # tentará credenciais padrão
+            raise RuntimeError("Variável GEE_SA_KEY_JSON não encontrada no ambiente.")
     except Exception as e:
         st.error(f"Erro ao inicializar o Google Earth Engine: {e}")
         st.stop()
+
 
 # Paletas e faixas por índice (ajustáveis)
 INDEX_VIS = {
