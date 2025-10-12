@@ -84,13 +84,6 @@ def create_map():
     )
     draw.add_to(m)
 
-    if st.session_state.gdf_poligono_total is not None:
-        folium.GeoJson(
-            st.session_state.gdf_poligono_total,
-            name="Área Total",
-            style_function=lambda x: {"color": "green", "fillColor": "green", "fillOpacity": 0.3}
-        ).add_to(m)
-
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
