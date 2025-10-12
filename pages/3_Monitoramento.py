@@ -83,15 +83,24 @@ def init_ee_or_explain():
         return False, f"Erro ao inicializar o GEE: {e}"
 
 def add_ee_to_folium(m, ee_image, vis, name="EE layer", shown=True, opacity=1.0):
-    """Adiciona uma ee.Image ao folium.Map usando geemap.ee_tile_layer."""
-    layer = geemap.ee_tile_layer(
-        ee_object=ee_image,
-        vis_params=vis,
+    """
+    Adiciona uma ee.Image ao folium.Map criando um TileLayer nativo do Folium.
+    Evita o erro 'EELeafletTileLayer' object has no attribute 'get_name'.
+    """
+    # Gera URL de tiles do EE
+    map_id_dict = ee.Image(ee_image).getMapId(vis)
+    tile_url = map_id_dict["tile_fetcher"].url_format
+
+    # Cria um TileLayer padrão do Folium
+    folium.raster_layers.TileLayer(
+        tiles=tile_url,
         name=name,
-        shown=shown,
-        opacity=opacity
-    )
-    m.add_child(layer)
+        attr="Google Earth Engine",
+        overlay=True,
+        control=True,
+        show=shown,
+        opacity=opacity,
+    ).add_to(m)
 
 # Paletas e bandas por índice (Sentinel-2 SR Harmonized)
 INDEX_INFO = {
