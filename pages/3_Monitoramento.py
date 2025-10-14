@@ -1,5 +1,4 @@
 import os
-import io
 import json
 import glob
 from datetime import date
@@ -13,7 +12,6 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 from branca.element import Template, MacroElement
-
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import to_hex
@@ -93,9 +91,6 @@ def ensure_ee_init():
 
 ensure_ee_init()
 
-# -------------------------
-# Paletas e visual por índice
-# -------------------------
 def mpl_palette(name: str, n: int = 7):
     cmap = cm.get_cmap(name)
     return [to_hex(cmap(x)) for x in np.linspace(0, 1, n)]
@@ -126,7 +121,7 @@ INDEX_RANGES = {
 }
 
 # -------------------------
-# Sidebar – controles
+# Sidebar – controles (entrada)
 # -------------------------
 with st.sidebar:
     st.subheader("Configurações")
@@ -139,19 +134,16 @@ with st.sidebar:
     start = c1.date_input("Início", value=date(2024, 1, 1))
     end   = c2.date_input("Fim", value=date.today())
     indices_sel = st.multiselect(
-        "Índices",
+        "Índices para processar (série temporal)",
         list(INDEX_RANGES.keys()),
         default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"]
     )
-    palette_name = st.selectbox("Paleta de cores", list(PALETTES.keys()), index=0)
+    palette_name = st.selectbox("Paleta de cores (mapa)", list(PALETTES.keys()), index=0)
     cloud_thr = st.slider("Nuvem máxima (%)", 0, 60, 10, 1)
-    show_rgb = st.checkbox("Mostrar RGB (B4/B3/B2)", value=False)
-    rgb_min = st.number_input("RGB min", value=0, step=10)
-    rgb_max = st.number_input("RGB max", value=3000, step=50)
     btn = st.button("▶️ Processar")
 
 # -------------------------
-# Carregar área (amostral ou upload)
+# Carregar área
 # -------------------------
 gdf_area = None
 base_dir = None
@@ -172,7 +164,6 @@ else:
 if gdf_area is None:
     st.stop()
 
-# Converte polígono para EE
 try:
     ee_poly = geemap.gdf_to_ee(gdf_area[["geometry"]])
 except Exception as e:
@@ -239,75 +230,33 @@ def ee_tile_url(image, vis):
     m = ee.Image(image).getMapId(vis)
     return m["tile_fetcher"].url_format
 
-# -------------------------
-# Estado (session_state)
-# -------------------------
-STATE_DEFAULTS = dict(
-    dates=[],
-    active_date=None,         # 'YYYY-MM-DD'
-    active_index=None,        # índice escolhido para o mapa
-    ts_df=None,               # série temporal (pandas)
-    last_palette=None,        # nome da paleta atual (para invalidar cache)
-)
-for k, v in STATE_DEFAULTS.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+def get_dates_and_ts(ee_geom, start_d, end_d, indices, cloud):
+    base = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+            .filterBounds(ee_geom)
+            .filterDate(ee.Date(str(start_d)), ee.Date(str(end_d)))
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud)))
+    dates = (base.aggregate_array("system:time_start")
+             .map(lambda t: ee.Date(t).format("YYYY-MM-dd"))
+             .distinct()
+             .getInfo())
+    dates = sorted(list(set(dates)))
+    if not dates:
+        return [], pd.DataFrame()
+    col_idx = base.map(lambda im: add_indices(im, indices))
+    ts_df = time_series_mean(col_idx, ee_geom, indices, scale=10)
+    return dates, ts_df
 
-# -------------------------
-# Processamento principal
-# -------------------------
-def process_collection():
-    if len(indices_sel) == 0:
-        st.warning("Selecione pelo menos um índice.")
-        st.stop()
-
-    # Coleção Sentinel-2 SR
-    col_base = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                .filterBounds(ee_poly.geometry())
-                .filterDate(ee.Date(str(start)), ee.Date(str(end)))
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud_thr)))
-
-    # Datas únicas (por dia)
-    date_list = (col_base.aggregate_array("system:time_start")
-                 .map(lambda t: ee.Date(t).format("YYYY-MM-dd"))
-                 .distinct().getInfo())
-    date_list = sorted(list(set(date_list)))
-    if not date_list:
-        st.warning("Nenhuma imagem encontrada no período/limite de nuvens escolhido.")
-        st.stop()
-
-    # Índice ativo default
-    active_index = indices_sel[0]
-
-    # Monta coleção com índices (para série temporal)
-    col_idx = col_base.map(lambda im: add_indices(im, indices_sel))
-
-    # Série temporal (média por data)
-    ts_df = time_series_mean(col_idx, ee_poly, indices_sel, scale=10)
-
-    # Guarda no estado
-    st.session_state.dates = date_list
-    st.session_state.active_date = date_list[0]
-    st.session_state.active_index = active_index
-    st.session_state.ts_df = ts_df
-    st.session_state.last_palette = palette_name
-
-def get_image_for_date(date_str: str):
-    """Retorna uma única imagem da data dada (menor nuvem),
-       já com índices adicionados e recorte no polígono."""
+def get_best_image_for_date(ee_geom, date_str, cloud, indices):
     d0 = ee.Date(date_str)
     d1 = d0.advance(1, "day")
     daycol = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-              .filterBounds(ee_poly.geometry())
+              .filterBounds(ee_geom)
               .filterDate(d0, d1)
-              .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud_thr))
+              .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud))
               .sort('CLOUDY_PIXEL_PERCENTAGE', True))
-    # pega a primeira (menor nuvem)
     img = ee.Image(daycol.first())
-    # se por algum motivo vazio:
-    # (em teoria não chega aqui porque a lista de datas vem do col_base)
     img = ee.Image(ee.Algorithms.If(img, img, ee.Image(daycol.median())))
-    img = add_indices(ee.Image(img), indices_sel).clip(ee_poly)
+    img = add_indices(ee.Image(img), INDEX_RANGES.keys()).clip(ee_poly)
     return img
 
 def add_linear_legend(fmap, title, palette, vmin, vmax, date_str=None, position="bottomright"):
@@ -340,57 +289,52 @@ def add_linear_legend(fmap, title, palette, vmin, vmax, date_str=None, position=
     macro._template = tmpl
     fmap.get_root().add_child(macro)
 
-# Dispara processamento
+# -------------------------
+# Estado mínimo (datas + série)
+# -------------------------
+if "mon_dates" not in st.session_state:    st.session_state["mon_dates"] = []
+if "mon_ts" not in st.session_state:       st.session_state["mon_ts"] = pd.DataFrame()
+
+# Processar (calcula datas e série; o mapa é sempre renderizado conforme seleção atual)
 if btn:
     with st.spinner("Processando imagens, listando datas e calculando séries..."):
         try:
-            process_collection()
+            dates, ts_df = get_dates_and_ts(ee_poly.geometry(), start, end, indices_sel, cloud_thr)
+            if not dates:
+                st.warning("Nenhuma imagem encontrada no período com o limite de nuvem escolhido.")
+            st.session_state["mon_dates"] = dates
+            st.session_state["mon_ts"] = ts_df
             st.success("Pronto! Use os controles abaixo para visualizar.")
         except Exception as e:
             st.error(f"Falha no processamento: {e}")
 
 # -------------------------
-# UI pós-processamento
+# Controles pós-processamento (visual)
 # -------------------------
-dates = st.session_state.get("dates") or []
-ts_df = st.session_state.get("ts_df")
-active_index = st.session_state.get("active_index")
-active_date = st.session_state.get("active_date")
+dates = st.session_state.get("mon_dates", [])
+ts_df = st.session_state.get("mon_ts", pd.DataFrame())
 
 if dates:
-    # Controles de visualização
+    # UI de visualização (sem guardar ativo em estado; recalcula no ato)
     c1, c2, c3 = st.columns([2, 2, 2])
     with c1:
-        idx_choice = st.selectbox("Índice ativo (mapa)", indices_sel, index=indices_sel.index(active_index) if active_index in indices_sel else 0)
+        # Radio: qual camada exibir no mapa (índices + RGB)
+        idx_for_map = st.radio(
+            "Camada do mapa",
+            options=["RGB (B4/B3/B2)"] + indices_sel,
+            index=0
+        )
     with c2:
-        date_choice = st.select_slider("Data (cena única)", options=dates, value=active_date)
+        date_choice = st.select_slider("Data (cena única)", options=dates, value=dates[0])
     with c3:
-        # deixa trocar a paleta depois do processamento
-        palette_name = st.selectbox("Paleta (mapa)", list(PALETTES.keys()), index=list(PALETTES.keys()).index(st.session_state.get("last_palette", "YlGn")))
+        palette_name = st.selectbox("Paleta (mapa)", list(PALETTES.keys()), index=list(PALETTES.keys()).index(palette_name))
 
-    # Atualiza estado
-    st.session_state.active_index = idx_choice
-    st.session_state.active_date = date_choice
-    st.session_state.last_palette = palette_name
+    # Monta a imagem única para a data escolhida (menor nuvem do dia)
+    img_date = get_best_image_for_date(ee_poly.geometry(), date_choice, cloud_thr, indices_sel)
 
-    # Monta imagem única para a data escolhida
-    img_date = get_image_for_date(date_choice)
-
-    # Visualização do índice escolhido
-    idx_vis = INDEX_RANGES[idx_choice]
-    idx_palette = PALETTES[palette_name]
-    idx_url = ee_tile_url(img_date.select(idx_choice), {**idx_vis, "palette": idx_palette})
-
-    # RGB opcional
-    rgb_layer_url = None
-    if show_rgb:
-        rgb_vis = {"bands": ["B4", "B3", "B2"], "min": rgb_min, "max": rgb_max}
-        rgb_layer_url = ee_tile_url(img_date, rgb_vis)
-
-    # Mapa Folium
+    # Construção do mapa
     center = [gdf_area.geometry.unary_union.centroid.y, gdf_area.geometry.unary_union.centroid.x]
     m = folium.Map(location=center, zoom_start=16, tiles="OpenStreetMap")
-
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri", name="Satélite", overlay=False, control=True
@@ -402,43 +346,43 @@ if dates:
         style_function=lambda x: {"color":"#1976d2","weight":2,"fillColor":"#1976d2","fillOpacity":0.08}
     ).add_to(m)
 
-    # Índice ativo (uma única camada visível)
-    folium.raster_layers.TileLayer(
-        tiles=idx_url, name=f"{idx_choice}", attr="Google Earth Engine",
-        overlay=True, control=True, show=True, opacity=0.95
-    ).add_to(m)
-
-    # RGB opcional (pode ligar/desligar no LayerControl)
-    if rgb_layer_url:
+    # Camada do mapa: RGB ou índice
+    if idx_for_map == "RGB (B4/B3/B2)":
+        rgb_url = ee_tile_url(img_date, {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
         folium.raster_layers.TileLayer(
-            tiles=rgb_layer_url, name="RGB (B4/B3/B2)", attr="Google Earth Engine",
-            overlay=True, control=True, show=False, opacity=0.9
+            tiles=rgb_url, name="RGB (B4/B3/B2)", attr="Google Earth Engine",
+            overlay=True, control=True, show=True, opacity=0.95
         ).add_to(m)
+        # legenda simples para RGB
+        add_linear_legend(m, "RGB (B4/B3/B2)", ["#000000", "#FFFFFF"], 0, 3000, date_str=date_choice)
+    else:
+        # índice escolhido
+        vis_range = INDEX_RANGES[idx_for_map]
+        vis_palette = PALETTES[palette_name]
+        idx_url = ee_tile_url(img_date.select(idx_for_map), {**vis_range, "palette": vis_palette})
+        folium.raster_layers.TileLayer(
+            tiles=idx_url, name=idx_for_map, attr="Google Earth Engine",
+            overlay=True, control=True, show=True, opacity=0.95
+        ).add_to(m)
+        add_linear_legend(
+            m, idx_for_map, vis_palette, vis_range["min"], vis_range["max"], date_str=date_choice
+        )
 
     folium.LayerControl(collapsed=False).add_to(m)
 
-    # legenda com data da cena
-    add_linear_legend(
-        fmap=m,
-        title=idx_choice,
-        palette=idx_palette,
-        vmin=idx_vis["min"],
-        vmax=idx_vis["max"],
-        date_str=date_choice,
-        position="bottomright"
-    )
+    # 🔑 chave do mapa inclui índice + data + paleta => força re-render imediato
+    map_key = f"map_{idx_for_map}_{date_choice}_{palette_name}"
+    st_folium(m, width=1000, height=620, key=map_key)
 
-    st_folium(m, width=1000, height=620, key="map_monitor")
-
-    # Série temporal (média no polígono)
+    # Série temporal
     if isinstance(ts_df, pd.DataFrame) and not ts_df.empty:
         st.subheader("📈 Série temporal (média do índice no polígono)")
         fig, ax = plt.subplots(figsize=(10, 3.5))
-        ts_plot = ts_df.copy()
-        ts_plot["date"] = pd.to_datetime(ts_plot["date"])
+        plot_df = ts_df.copy()
+        plot_df["date"] = pd.to_datetime(plot_df["date"])
         for idx in indices_sel:
-            if idx in ts_plot.columns:
-                ax.plot(ts_plot["date"], ts_plot[idx], label=idx)
+            if idx in plot_df.columns:
+                ax.plot(plot_df["date"], plot_df[idx], label=idx)
         ax.set_xlabel("Data")
         ax.set_ylabel("Valor médio")
         ax.grid(True, alpha=.3)
