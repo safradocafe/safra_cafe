@@ -137,70 +137,54 @@ INDEX_RANGES = {
 }
 
 # -------------------------
-# Sidebar – controles (entrada)
+# Sidebar – controles (UM BLOCO ÚNICO)
 # -------------------------
 with st.sidebar:
     st.subheader("Configurações")
     area_opt = st.radio(
         "Área de interesse:",
         ["Usar área amostral salva (passo 1)", "Fazer upload de polígono (GPKG)"],
-        index=0
+        index=0,
+        key="area_opt_radio"
     )
     c1, c2 = st.columns(2)
-    start = c1.date_input("Início", value=date(2024, 1, 1))
-    end   = c2.date_input("Fim", value=date.today())
+    start = c1.date_input("Início", value=date(2024, 1, 1), key="start_date")
+    end   = c2.date_input("Fim", value=date.today(), key="end_date")
     indices_sel = st.multiselect(
         "Índices para processar (série temporal)",
         list(INDEX_RANGES.keys()),
-        default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"]
+        default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"],
+        key="indices_sel_ms"
     )
-    palette_name = st.selectbox("Paleta de cores (mapa)", list(PALETTES.keys()), index=0)
-    cloud_thr = st.slider("Nuvem máxima (%)", 0, 60, 10, 1)
-    btn = st.button("▶️ Processar")
+    palette_name = st.selectbox("Paleta de cores (mapa)", list(PALETTES.keys()), index=0, key="palette_sel")
+    cloud_thr = st.slider("Nuvem máxima (%)", 0, 60, 10, 1, key="cloud_thr")
+    btn = st.button("▶️ Processar", key="process_btn")
 
-with st.sidebar:
-    st.subheader("Configurações")
-    area_opt = st.radio(
-        "Área de interesse:",
-        ["Usar área amostral salva (passo 1)", "Fazer upload de polígono (GPKG)"],
-        index=0
-    )
-    c1, c2 = st.columns(2)
-    start = c1.date_input("Início", value=date(2024, 1, 1))
-    end   = c2.date_input("Fim", value=date.today())
-
-    indices_sel = st.multiselect(
-        "Índices para processar (série temporal)",
-        list(INDEX_RANGES.keys()),
-        default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"]
-    )
-
-    palette_name = st.selectbox("Paleta de cores (mapa)", list(PALETTES.keys()), index=0)
-    cloud_thr = st.slider("Nuvem máxima (%)", 0, 60, 10, 1)
-    btn = st.button("▶️ Processar")
-
-    # 👇 legenda dinâmica logo abaixo do botão
+    # legenda dinâmica logo abaixo do botão
     sidebar_palette_legend(PALETTES[palette_name], vmin=-1.0, vmax=1.0, title="Legenda (índices -1 a 1)")
 
 # -------------------------
 # Carregar área
 # -------------------------
-gdf_area = None
-base_dir = None
-if area_opt.startswith("Usar"):
-    gdf_area, base_dir = load_area_from_tmp()
-    if gdf_area is None:
-        st.warning("Não encontrei a área amostral salva. Volte ao passo 1 e clique em **Salvar dados**.")
-else:
-    up = st.file_uploader("Carregue um polígono (GPKG)", type=["gpkg"])
-    if up:
-        tmp = "/tmp/_poly_upload.gpkg"
-        with open(tmp, "wb") as f:
-            f.write(up.getbuffer())
-        gdf_area = gpd.read_file(tmp)
-        if gdf_area.crs is None or gdf_area.crs.to_epsg() != 4326:
-            gdf_area = gdf_area.set_crs(4326) if gdf_area.crs is None else gdf_area.to_crs(4326)
+def load_area(area_opt):
+    if area_opt.startswith("Usar"):
+        gdf_area, base_dir = load_area_from_tmp()
+        if gdf_area is None:
+            st.warning("Não encontrei a área amostral salva. Volte ao passo 1 e clique em **Salvar dados**.")
+        return gdf_area
+    else:
+        up = st.file_uploader("Carregue um polígono (GPKG)", type=["gpkg"], key="poly_uploader")
+        if up:
+            tmp = "/tmp/_poly_upload.gpkg"
+            with open(tmp, "wb") as f:
+                f.write(up.getbuffer())
+            gdf_area = gpd.read_file(tmp)
+            if gdf_area.crs is None or gdf_area.crs.to_epsg() != 4326:
+                gdf_area = gdf_area.set_crs(4326) if gdf_area.crs is None else gdf_area.to_crs(4326)
+            return gdf_area
+    return None
 
+gdf_area = load_area(area_opt)
 if gdf_area is None:
     st.stop()
 
@@ -335,7 +319,7 @@ def add_linear_legend(fmap, title, palette, vmin, vmax, date_str=None, position=
 if "mon_dates" not in st.session_state:    st.session_state["mon_dates"] = []
 if "mon_ts" not in st.session_state:       st.session_state["mon_ts"] = pd.DataFrame()
 
-# Processar (calcula datas e série; o mapa é sempre renderizado conforme seleção atual)
+# Processar
 if btn:
     with st.spinner("Processando imagens, listando datas e calculando séries..."):
         try:
@@ -355,24 +339,28 @@ dates = st.session_state.get("mon_dates", [])
 ts_df = st.session_state.get("mon_ts", pd.DataFrame())
 
 if dates:
-    # UI de visualização (sem guardar ativo em estado; recalcula no ato)
     c1, c2, c3 = st.columns([2, 2, 2])
     with c1:
-        # Radio: qual camada exibir no mapa (índices + RGB)
         idx_for_map = st.radio(
             "Camada do mapa",
             options=["RGB (B4/B3/B2)"] + indices_sel,
-            index=0
+            index=0,
+            key="layer_choice"
         )
     with c2:
-        date_choice = st.select_slider("Data (cena única)", options=dates, value=dates[0])
+        date_choice = st.select_slider("Data (cena única)", options=dates, value=dates[0], key="date_choice")
     with c3:
-        palette_name = st.selectbox("Paleta (mapa)", list(PALETTES.keys()), index=list(PALETTES.keys()).index(palette_name))
+        palette_name_view = st.selectbox(
+            "Paleta (mapa)",
+            list(PALETTES.keys()),
+            index=list(PALETTES.keys()).index(palette_name),
+            key="palette_choice_view"
+        )
 
-    # Monta a imagem única para a data escolhida (menor nuvem do dia)
+    # Imagem do dia selecionado
     img_date = get_best_image_for_date(ee_poly.geometry(), date_choice, cloud_thr, indices_sel)
 
-    # Construção do mapa
+    # Mapa
     center = [gdf_area.geometry.unary_union.centroid.y, gdf_area.geometry.unary_union.centroid.x]
     m = folium.Map(location=center, zoom_start=16, tiles="OpenStreetMap")
     folium.TileLayer(
@@ -386,19 +374,16 @@ if dates:
         style_function=lambda x: {"color":"#1976d2","weight":2,"fillColor":"#1976d2","fillOpacity":0.08}
     ).add_to(m)
 
-    # Camada do mapa: RGB ou índice
     if idx_for_map == "RGB (B4/B3/B2)":
         rgb_url = ee_tile_url(img_date, {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
         folium.raster_layers.TileLayer(
             tiles=rgb_url, name="RGB (B4/B3/B2)", attr="Google Earth Engine",
             overlay=True, control=True, show=True, opacity=0.95
         ).add_to(m)
-        # legenda simples para RGB
         add_linear_legend(m, "RGB (B4/B3/B2)", ["#000000", "#FFFFFF"], 0, 3000, date_str=date_choice)
     else:
-        # índice escolhido
         vis_range = INDEX_RANGES[idx_for_map]
-        vis_palette = PALETTES[palette_name]
+        vis_palette = PALETTES[palette_name_view]
         idx_url = ee_tile_url(img_date.select(idx_for_map), {**vis_range, "palette": vis_palette})
         folium.raster_layers.TileLayer(
             tiles=idx_url, name=idx_for_map, attr="Google Earth Engine",
@@ -410,8 +395,8 @@ if dates:
 
     folium.LayerControl(collapsed=False).add_to(m)
 
-    # 🔑 chave do mapa inclui índice + data + paleta => força re-render imediato
-    map_key = f"map_{idx_for_map}_{date_choice}_{palette_name}"
+    # chave força re-render ao mudar índice/data/paleta
+    map_key = f"map_{idx_for_map}_{date_choice}_{palette_name_view}"
     st_folium(m, width=1000, height=620, key=map_key)
 
     # Série temporal
