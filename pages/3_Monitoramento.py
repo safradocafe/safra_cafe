@@ -95,6 +95,22 @@ def mpl_palette(name: str, n: int = 7):
     cmap = cm.get_cmap(name)
     return [to_hex(cmap(x)) for x in np.linspace(0, 1, n)]
 
+def sidebar_palette_legend(palette, vmin=-1.0, vmax=1.0, title="Legenda (índices -1 a 1)"):
+    gradient = "linear-gradient(to right, " + ", ".join(palette) + ")"
+    html = f"""
+    <div style="margin-top:.5rem; padding:.6rem .7rem; background:rgba(255,255,255,.9);
+                border:1px solid #ddd; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
+      <div style="font-weight:700; font-size:.9rem; margin-bottom:.45rem;">{title}</div>
+      <div style="height:14px; width:100%; background:{gradient}; border:1px solid #aaa; border-radius:4px;"></div>
+      <div style="display:flex; justify-content:space-between; font-size:.8rem; color:#333; margin-top:4px;">
+        <span>{vmin:.1f}</span>
+        <span>{(vmin+vmax)/2:.1f}</span>
+        <span>{vmax:.1f}</span>
+      </div>
+    </div>
+    """
+    st.sidebar.markdown(html, unsafe_allow_html=True)
+
 PALETTES = {
     "YlGn": mpl_palette("YlGn"),
     "viridis": mpl_palette("viridis"),
@@ -141,6 +157,30 @@ with st.sidebar:
     palette_name = st.selectbox("Paleta de cores (mapa)", list(PALETTES.keys()), index=0)
     cloud_thr = st.slider("Nuvem máxima (%)", 0, 60, 10, 1)
     btn = st.button("▶️ Processar")
+
+with st.sidebar:
+    st.subheader("Configurações")
+    area_opt = st.radio(
+        "Área de interesse:",
+        ["Usar área amostral salva (passo 1)", "Fazer upload de polígono (GPKG)"],
+        index=0
+    )
+    c1, c2 = st.columns(2)
+    start = c1.date_input("Início", value=date(2024, 1, 1))
+    end   = c2.date_input("Fim", value=date.today())
+
+    indices_sel = st.multiselect(
+        "Índices para processar (série temporal)",
+        list(INDEX_RANGES.keys()),
+        default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"]
+    )
+
+    palette_name = st.selectbox("Paleta de cores (mapa)", list(PALETTES.keys()), index=0)
+    cloud_thr = st.slider("Nuvem máxima (%)", 0, 60, 10, 1)
+    btn = st.button("▶️ Processar")
+
+    # 👇 legenda dinâmica logo abaixo do botão
+    sidebar_palette_legend(PALETTES[palette_name], vmin=-1.0, vmax=1.0, title="Legenda (índices -1 a 1)")
 
 # -------------------------
 # Carregar área
