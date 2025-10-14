@@ -44,7 +44,7 @@ st.markdown("""
   <div class="chip"><b>NBR</b>estresse térmico</div>
   <div class="chip"><b>TWI2</b>umidade do ar</div>
 </div>
-<div class="hint">Escolha o período, os índices e a área (amostral salva no passo 1 ou um polígono da fazenda) para visualizar no mapa e ver a série temporal (média no polígono).</div>
+<div class="hint">Escolha o período, os índices e a área (amostral salva no passo 1 ou um polígono da fazenda) para visualizar o mapa e a série temporal (média no polígono).</div>
 """, unsafe_allow_html=True)
 
 # -------------------------
@@ -137,7 +137,7 @@ def sidebar_palette_legend(palette, vmin=-1.0, vmax=1.0, title="Legenda (índice
     st.sidebar.markdown(html, unsafe_allow_html=True)
 
 # -------------------------
-# Sidebar – controles (UM BLOCO ÚNICO, chaves únicas)
+# Sidebar – controles (chaves únicas)
 # -------------------------
 with st.sidebar:
     st.subheader("Configurações")
@@ -164,7 +164,7 @@ with st.sidebar:
     cloud_thr    = st.slider("Nuvem máxima (%)", 0, 60, 10, 1, key="cloud_thr")
     btn          = st.button("▶️ Processar", key="process_btn")
 
-    # 👉 Legenda dinâmica SEMPRE baseada na paleta atualmente selecionada
+    # Legenda dinâmica da sidebar - acompanha a paleta selecionada
     sidebar_palette_legend(PALETTES[st.session_state["palette_sel"]], vmin=-1.0, vmax=1.0,
                            title="Legenda (índices -1 a 1)")
 
@@ -173,7 +173,7 @@ with st.sidebar:
 # -------------------------
 def load_area(area_opt):
     if area_opt.startswith("Usar"):
-        gdf_area, _base_dir = load_area_from_tmp()
+        gdf_area, _ = load_area_from_tmp()
         if gdf_area is None:
             st.warning("Não encontrei a área amostral salva. Volte ao passo 1 e clique em **Salvar dados**.")
         return gdf_area
@@ -202,6 +202,8 @@ except Exception as e:
 # -------------------------
 # Funções EE
 # -------------------------
+ALL_INDICES = list(INDEX_RANGES.keys())
+
 def add_indices(img, wanted):
     def nd(a, b):
         return img.normalizedDifference([a, b])
@@ -276,6 +278,7 @@ def get_dates_and_ts(ee_geom, start_d, end_d, indices, cloud):
     return dates, ts_df
 
 def get_best_image_for_date(ee_geom, date_str, cloud):
+    """Retorna a melhor imagem do dia (menor nuvem), já CLIPADA e com TODAS as bandas de índices adicionadas."""
     d0 = ee.Date(date_str)
     d1 = d0.advance(1, "day")
     daycol = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -286,6 +289,8 @@ def get_best_image_for_date(ee_geom, date_str, cloud):
     img = ee.Image(daycol.first())
     img = ee.Image(ee.Algorithms.If(img, img, ee.Image(daycol.median())))
     img = ee.Image(img).clip(ee_poly)
+    # 🔧 ADICIONA TODAS AS BANDAS DE ÍNDICES (evita "Band pattern 'NDVI' did not match any bands")
+    img = add_indices(img, ALL_INDICES)
     return img
 
 def add_linear_legend(fmap, title, palette, vmin, vmax, date_str=None, position="bottomright"):
@@ -319,7 +324,7 @@ def add_linear_legend(fmap, title, palette, vmin, vmax, date_str=None, position=
     fmap.get_root().add_child(macro)
 
 # -------------------------
-# Estado mínimo (datas + série)
+# Estado (datas + série)
 # -------------------------
 if "mon_dates" not in st.session_state:    st.session_state["mon_dates"] = []
 if "mon_ts" not in st.session_state:       st.session_state["mon_ts"] = pd.DataFrame()
@@ -328,7 +333,13 @@ if "mon_ts" not in st.session_state:       st.session_state["mon_ts"] = pd.DataF
 if st.session_state["process_btn"]:
     with st.spinner("Processando imagens, listando datas e calculando séries..."):
         try:
-            dates, ts_df = get_dates_and_ts(ee_poly.geometry(), st.session_state["start_date"], st.session_state["end_date"], st.session_state["indices_sel_ms"], st.session_state["cloud_thr"])
+            dates, ts_df = get_dates_and_ts(
+                ee_poly.geometry(),
+                st.session_state["start_date"],
+                st.session_state["end_date"],
+                st.session_state["indices_sel_ms"],
+                st.session_state["cloud_thr"]
+            )
             if not dates:
                 st.warning("Nenhuma imagem encontrada no período com o limite de nuvem escolhido.")
             st.session_state["mon_dates"] = dates
@@ -356,12 +367,14 @@ if dates:
     with colB:
         date_choice = st.select_slider("Data (cena única)", options=dates, value=dates[0], key="date_choice")
     with colC:
-        # reaproveita a mesma paleta da sidebar; mas permite trocar aqui também, se quiser
-        palette_name_view = st.selectbox("Paleta (mapa)", list(PALETTES.keys()),
-                                         index=list(PALETTES.keys()).index(st.session_state["palette_sel"]),
-                                         key="palette_sel_view")
+        palette_name_view = st.selectbox(
+            "Paleta (mapa)",
+            list(PALETTES.keys()),
+            index=list(PALETTES.keys()).index(st.session_state["palette_sel"]),
+            key="palette_sel_view"
+        )
 
-    # Imagem do dia
+    # Imagem do dia (com TODAS as bandas de índices)
     img_date = get_best_image_for_date(ee_poly.geometry(), date_choice, st.session_state["cloud_thr"])
 
     # Mapa
@@ -388,8 +401,8 @@ if dates:
         add_linear_legend(m, "RGB (B4/B3/B2)", ["#000000", "#FFFFFF"], 0, 3000, date_str=date_choice)
     else:
         vis_range = INDEX_RANGES[idx_for_map]
-        # usa a paleta selecionada no seletor "Paleta (mapa)" acima (colC)
         pal = PALETTES[st.session_state["palette_sel_view"]]
+        # agora a imagem tem a banda do índice:
         idx_url = ee_tile_url(img_date.select(idx_for_map), {**vis_range, "palette": pal})
         folium.raster_layers.TileLayer(
             tiles=idx_url, name=idx_for_map, attr="Google Earth Engine",
@@ -422,4 +435,3 @@ if dates:
         st.info("Sem dados suficientes para montar a série temporal nesse período.")
 else:
     st.info("Aguardando processamento. Defina período/índices e clique em **Processar**.")
-
