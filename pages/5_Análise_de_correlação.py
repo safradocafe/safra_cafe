@@ -1,239 +1,248 @@
-import os, glob, re
-from datetime import date
+# pages/4_1. Análise_de_correlação.py
+import os, glob, io, csv
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-from scipy.stats import shapiro, pearsonr
 import matplotlib.pyplot as plt
-import seaborn as sns
+from scipy.stats import shapiro, pearsonr
 
-# -----------------------------
-# Configuração da página
-# -----------------------------
+# =========================
+# Página / estilo
+# =========================
 st.set_page_config(page_title="Análise de correlação", layout="wide")
-st.title("📊 Análise de Correlação entre índices espectrais e produtividade")
+st.markdown("## 📊 Análise de Correlação entre índices espectrais e produtividade")
 
 BASE_TMP = "/tmp/streamlit_dados"
-IDX_NAMES = ["NDVI","GNDVI","NDRE","CCCI","MSAVI2","NDWI","NDMI","NBR","TWI2"]
-STAT_OPTS = {"Mínimo":"min", "Médio":"mean", "Máximo":"max"}
 
-# -----------------------------
+# =========================
 # Utilitários
-# -----------------------------
-def _find_latest_save_dir(base=BASE_TMP):
-    if not os.path.isdir(base): return None
-    cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
-    if not cands: return None
-    cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return cands[0]
+# =========================
+def _find_latest_indices_csv(base=BASE_TMP):
+    """Encontra o CSV mais recente gerado pela aba de Processamento/Previsão."""
+    if not os.path.isdir(base):
+        return None
+    pats = glob.glob(os.path.join(base, "salvamento-*", "indices_espectrais_pontos_*.csv"))
+    if not pats:
+        return None
+    pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return pats[0]
 
-@st.cache_data(show_spinner=False)
-def load_latest_csv():
-    """Localiza o CSV mais recente indices_espectrais_pontos_*.csv nos salvamentos."""
-    latest = _find_latest_save_dir()
-    if not latest:
-        return None, None
-    csvs = sorted(glob.glob(os.path.join(latest, "indices_espectrais_pontos_*.csv")))
-    if not csvs:
-        return None, latest
-    csv_path = csvs[-1]
-    df = pd.read_csv(csv_path)
-    return (df, csv_path)
+def _sniff_delim_and_decimal(sample_bytes: bytes):
+    """Infere delimitador e separador decimal (vírgula/ponto)."""
+    text = sample_bytes.decode("utf-8", errors="ignore")
+    # delimitador
+    try:
+        dialect = csv.Sniffer().sniff(text[:10000], delimiters=[",", ";", "\t", "|"])
+        delim = dialect.delimiter
+    except Exception:
+        delim = ";" if text.count(";") > text.count(",") else ","
+    # decimal
+    decimal = "."
+    for line in text.splitlines()[:50]:
+        if any(ch.isdigit() for ch in line):
+            if "," in line and (delim == ";" or line.count(",") > line.count(".")):
+                decimal = ","
+                break
+    return delim, decimal
 
-def parse_dates_from_columns(columns):
-    """Extrai datas únicas do padrão 'YYYY-MM-DD_IDX_stat'."""
-    dates = set()
-    rx = re.compile(r"^(\d{4}-\d{2}-\d{2})_([A-Z0-9]+)_(min|mean|max)$")
-    for c in columns:
-        m = rx.match(c)
-        if m:
-            dates.add(m.group(1))
-    return sorted(list(dates))
-
-def build_matrix(df_raw, stat="mean", date_choice="Média de todas as datas"):
-    """
-    Retorna um DataFrame com colunas:
-      maduro_kg + {NDVI, GNDVI, ...} de acordo com 'stat' e 'date_choice'.
-    - Se date_choice == 'Média de todas as datas': calcula a média por ponto de todas as colunas daquele índice e 'stat'.
-    - Se date_choice é uma data específica: usa somente as colunas daquela data.
-    """
-    df = df_raw.copy()
-
-    # Remove colunas não usadas
-    for dropcol in ["Code", "latitude", "longitude"]:
-        if dropcol in df.columns:
-            df = df.drop(columns=[dropcol])
-
-    # Garante maduro_kg
-    if "maduro_kg" not in df.columns:
-        raise ValueError("Coluna 'maduro_kg' não encontrada no CSV!")
-
-    out = pd.DataFrame(index=df.index)
-    out["maduro_kg"] = df["maduro_kg"]
-
-    if date_choice == "Média de todas as datas":
-        # Para cada índice, calcula a média (por linha) de todas as colunas *_IDX_stat
-        for idx in IDX_NAMES:
-            cols_idx = [c for c in df.columns if c.endswith(f"_{idx}_{stat}")]
-            # Observação: no processamento, o nome é 'YYYY-MM-DD_IDX_stat'
-            # então endswith é suficiente para pegar todas as datas.
-            if not cols_idx:
-                continue
-            out[idx] = df[cols_idx].mean(axis=1, skipna=True)
+def _read_csv_robusto(path_or_bytes):
+    """Lê CSV com detecção de separador/decimal e corrige casos de 'uma coluna só'."""
+    if isinstance(path_or_bytes, (str, os.PathLike)):
+        with open(path_or_bytes, "rb") as f:
+            raw = f.read()
     else:
-        # Usa somente as colunas da data específica
-        prefix = f"{date_choice}_"
-        for idx in IDX_NAMES:
-            col_name = f"{prefix}{idx}_{stat}"
-            if col_name in df.columns:
-                out[idx] = df[col_name]
-            # se não existir essa banda nessa data, deixa como NaN (col não criada)
+        raw = path_or_bytes
 
-    # remove colunas totalmente vazias (caso algum índice não exista para aquela data)
-    keep_cols = ["maduro_kg"] + [c for c in out.columns if c != "maduro_kg" and not out[c].isna().all()]
-    out = out[keep_cols]
-    return out
+    delim, dec = _sniff_delim_and_decimal(raw)
+    for enc in ("utf-8", "latin-1"):
+        try:
+            df = pd.read_csv(io.BytesIO(raw), sep=delim, decimal=dec, encoding=enc)
+            break
+        except Exception:
+            df = None
+    if df is None:
+        # última tentativa
+        df = pd.read_csv(io.BytesIO(raw))
 
-# -----------------------------
-# Carregamento de dados
-# -----------------------------
-st.header("1) Carregamento do CSV processado")
-df_raw, csv_path = load_latest_csv()
+    # caso tenha ficado tudo em 1 coluna, tenta o outro separador
+    if df.shape[1] == 1:
+        other = ";" if delim == "," else ","
+        for enc in ("utf-8", "latin-1"):
+            try:
+                df = pd.read_csv(io.BytesIO(raw), sep=other, decimal=dec, encoding=enc)
+                break
+            except Exception:
+                pass
 
-col_up1, col_up2 = st.columns([2, 3])
-with col_up1:
-    if df_raw is not None:
-        st.success(f"✅ CSV localizado: `{csv_path}`")
-    else:
-        st.warning("❌ CSV de índices não encontrado automaticamente.")
-with col_up2:
-    up = st.file_uploader("Ou selecione um CSV manualmente", type=["csv"])
-    if up is not None:
-        df_raw = pd.read_csv(up)
-        csv_path = "(upload)"
+    df.columns = [str(c).strip() for c in df.columns]
+    df = df.dropna(axis=1, how="all")
+    return df
 
-if df_raw is None:
+TOKENS_IDX = ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]
+
+def _filter_corr_columns(df: pd.DataFrame):
+    """Mantém maduro_kg e TODAS as colunas de índices (inclui _min/_mean/_max etc.)."""
+    drop_cols = [c for c in ["Code", "latitude", "longitude", "geometry"] if c in df.columns]
+    df = df.drop(columns=drop_cols, errors="ignore")
+
+    idx_cols = [c for c in df.columns if any(tok in c for tok in TOKENS_IDX)]
+    keep = (["maduro_kg"] if "maduro_kg" in df.columns else []) + idx_cols
+    if not keep:
+        return pd.DataFrame()
+
+    # Coerção numérica
+    df_num = df[keep].copy()
+    for c in df_num.columns:
+        df_num[c] = pd.to_numeric(df_num[c], errors="coerce")
+
+    # Remove linhas sem alvo
+    if "maduro_kg" in df_num.columns:
+        df_num = df_num.dropna(subset=["maduro_kg"], how="any")
+    # Remove colunas totalmente NaN
+    df_num = df_num.dropna(axis=1, how="all")
+    return df_num
+
+def _choose_method(df: pd.DataFrame):
+    """Testa normalidade (Shapiro) e decide Pearson (se >50% normais) ou Spearman."""
+    cols = [c for c in df.columns if c != "maduro_kg"]
+    test_cols = ["maduro_kg"] + cols
+    normal, tested = 0, 0
+    for c in test_cols:
+        s = df[c].dropna()
+        if len(s) < 3:
+            continue
+        tested += 1
+        try:
+            _, p = shapiro(s)
+            if p > 0.05:
+                normal += 1
+        except Exception:
+            pass
+    prop = (normal / tested) if tested else 0.0
+    metodo = "pearson" if prop > 0.5 else "spearman"
+    return metodo, prop
+
+def _corr_top5(df: pd.DataFrame, metodo: str):
+    cols = [c for c in df.columns if c != "maduro_kg"]
+    vals = {}
+    for c in cols:
+        try:
+            vals[c] = df[["maduro_kg", c]].corr(method=metodo).iloc[0, 1]
+        except Exception:
+            vals[c] = np.nan
+    s = pd.Series(vals).dropna()
+    top5 = s.abs().sort_values(ascending=False).head(5).index.tolist()
+    return s, top5
+
+def _pearson_pvals(df: pd.DataFrame, cols):
+    """p-valores de Pearson para o Top 5 (informativo)."""
+    pvals = {}
+    a = pd.to_numeric(df["maduro_kg"], errors="coerce").dropna()
+    for c in cols:
+        b = pd.to_numeric(df[c], errors="coerce").dropna()
+        m = min(len(a), len(b))
+        if m < 3:
+            pvals[c] = np.nan
+            continue
+        try:
+            _, p = pearsonr(a.iloc[:m], b.iloc[:m])
+            pvals[c] = p
+        except Exception:
+            pvals[c] = np.nan
+    return pvals
+
+# =========================
+# 1) Carregamento do CSV (auto + upload)
+# =========================
+st.markdown("#### 1) Carregamento de dados")
+
+latest_csv_path = _find_latest_indices_csv()
+df_raw = None
+
+if latest_csv_path and os.path.exists(latest_csv_path):
+    try:
+        df_raw = _read_csv_robusto(latest_csv_path)
+        st.success(f"✅ CSV carregado automaticamente: `{latest_csv_path}`")
+    except Exception as e:
+        st.error(f"Falha ao ler o CSV automático: {e}")
+
+up = st.file_uploader("Ou selecione manualmente o CSV gerado na aba de Processamento", type=["csv"])
+if up is not None:
+    try:
+        df_raw = _read_csv_robusto(up.getvalue())
+        st.info("CSV enviado via upload foi carregado e será usado nesta análise.")
+    except Exception as e:
+        st.error(f"Falha ao ler o CSV enviado: {e}")
+
+if df_raw is None or df_raw.empty:
+    st.error("❌ Nenhum CSV válido foi encontrado/enviado. Gere o arquivo na aba **Previsão da safra**.")
     st.stop()
 
-with st.expander("👀 Amostra dos dados brutos (do CSV)", expanded=False):
-    # mostra sem truncar colunas em excesso
+with st.expander("Pré-visualização do CSV (bruto)"):
     st.dataframe(df_raw.head(), use_container_width=True)
 
-# -----------------------------
-# Seleções de análise
-# -----------------------------
-st.header("2) Preparar matriz para correlação")
-
-c1, c2, c3 = st.columns([1, 1, 2])
-with c1:
-    stat_label = st.radio("Estatística dos índices", list(STAT_OPTS.keys()), index=1, horizontal=True)
-    stat = STAT_OPTS[stat_label]
-
-with c2:
-    # Datas disponíveis
-    dates = parse_dates_from_columns(df_raw.columns)
-    date_choice = st.selectbox("Data a analisar", ["Média de todas as datas"] + dates, index=0)
-
-with c3:
-    dropna = st.checkbox("Remover linhas com NaN", value=True)
-
-# Monta a matriz X/y conforme escolhas
-try:
-    df = build_matrix(df_raw, stat=stat, date_choice=date_choice)
-except Exception as e:
-    st.error(f"Erro ao montar a matriz de análise: {e}")
+# =========================
+# 2) Tratamento: mantém 'maduro_kg' + TODOS os índices
+# =========================
+df = _filter_corr_columns(df_raw)
+if df.empty or "maduro_kg" not in df.columns:
+    st.error("❌ Não foi possível encontrar 'maduro_kg' e/ou colunas de índices espectrais no CSV.")
     st.stop()
 
-if dropna:
-    df = df.dropna()
-
-if df.empty or df.shape[1] < 2:
-    st.warning("Sem dados suficientes após o tratamento. Ajuste as opções acima.")
-    st.stop()
-
-with st.expander("👀 Amostra da matriz tratada (somente maduro_kg + índices)", expanded=False):
+st.caption(f"Linhas após tratamento: **{len(df)}** | Colunas de análise: **{len(df.columns)}**")
+with st.expander("Visualizar dados tratados (maduro_kg + TODOS os índices)"):
     st.dataframe(df.head(), use_container_width=True)
 
-# -----------------------------
-# 3) Teste de normalidade + método
-# -----------------------------
-st.header("3) Teste de normalidade e método de correlação")
-try:
-    resultados_normalidade = []
-    for col in df.columns:
-        # shapiro exige >=3 valores
-        series = df[col].dropna()
-        if len(series) >= 3:
-            stat_v, p_v = shapiro(series)
-            normal = p_v > 0.05
-            resultados_normalidade.append({"Variável": col, "p-valor": f"{p_v:.4f}", "Normal": "Sim" if normal else "Não"})
-        else:
-            resultados_normalidade.append({"Variável": col, "p-valor": "n/a", "Normal": "n/a"})
+# =========================
+# 3) Análise automática
+# =========================
+st.markdown("### 2) Análise estatística (automática)")
 
-    df_norm = pd.DataFrame(resultados_normalidade)
-    st.dataframe(df_norm, use_container_width=True)
+metodo, prop_norm = _choose_method(df)
+st.write(f"**Método selecionado:** {'Pearson' if metodo=='pearson' else 'Spearman'} "
+         f"(variáveis com normalidade: {prop_norm:.0%})")
 
-    proporcao_normal = (df_norm["Normal"] == "Sim").mean()
-    metodo = "pearson" if proporcao_normal > 0.5 else "spearman"
-    st.success(f"Método selecionado: **{metodo.capitalize()}**")
-except Exception as e:
-    st.error(f"Erro no teste de normalidade: {e}")
-    st.stop()
+# Matriz de correlação
+corr = df.corr(method=metodo)
+st.subheader("Matriz de correlação")
+st.dataframe(corr.style.background_gradient(cmap="RdYlGn").format("{:.2f}"),
+             use_container_width=True)
 
-# -----------------------------
-# 4) Correlações
-# -----------------------------
-st.header("4) Correlações com a produtividade (maduro_kg)")
+# Top 5
+st.subheader("Top 5 correlações (|r|) com **maduro_kg**")
+s_all, top5_cols = _corr_top5(df, metodo)
+pvals = _pearson_pvals(df, top5_cols) if metodo == "pearson" else {}
 
-try:
-    # Matriz completa
-    corr = df.corr(method=metodo)
-    # Série maduro vs índices (exclui a própria maduro_kg)
-    idx_cols = [c for c in df.columns if c != "maduro_kg"]
-    serie_corr = pd.Series({col: corr.loc["maduro_kg", col] for col in idx_cols if col in corr.columns})
+for c in top5_cols:
+    r = s_all[c]
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        st.metric(label=c, value=f"{r:.3f}")
+    with col2:
+        if metodo == "pearson":
+            p = pvals.get(c, np.nan)
+            if np.isnan(p):
+                st.caption("p-valor: n/d")
+            else:
+                sig = "✅ Significativa" if p < 0.05 else "⚠️ Não significativa"
+                st.caption(f"p-valor: {p:.4f} ({sig})")
 
-    # p-valores (apenas Pearson)
-    pvals = {}
-    if metodo == "pearson":
-        for col in idx_cols:
-            common = df[["maduro_kg", col]].dropna()
-            if len(common) >= 3:
-                _, p_val = pearsonr(common["maduro_kg"], common[col])
-                pvals[col] = p_val
+# Heatmap
+st.subheader("Heatmap de correlação")
+fig, ax = plt.subplots(figsize=(min(11, 0.9 * len(corr.columns)), 6))
+im = ax.imshow(corr.values, cmap="RdYlGn", vmin=-1, vmax=1)
+ax.set_xticks(range(len(corr.columns))); ax.set_xticklabels(corr.columns, rotation=45, ha="right")
+ax.set_yticks(range(len(corr.index)));   ax.set_yticklabels(corr.index)
+cbar = plt.colorbar(im, ax=ax, shrink=0.85, label="Correlação")
+plt.tight_layout()
+st.pyplot(fig, use_container_width=True)
 
-    # Top 5 absolutos
-    top5 = serie_corr.abs().sort_values(ascending=False).head(5).index.tolist()
-
-    # Métricas em cards
-    st.subheader("Top 5 correlações (|r|)")
-    for col in top5:
-        r = serie_corr[col]
-        c1, c2 = st.columns([1, 4])
-        with c1:
-            st.metric(label=col, value=f"{r:.3f}", help="Positiva" if r > 0 else "Negativa")
-        with c2:
-            if metodo == "pearson" and col in pvals:
-                p = pvals[col]
-                sig = "✅ Significativa (p<0.05)" if p < 0.05 else "⚠️ Não significativa (p≥0.05)"
-                st.caption(f"p-valor: {p:.4f} — {sig}")
-
-    # Heatmap
-    st.subheader("Heatmap de correlação (matriz completa)")
-    fig, ax = plt.subplots(figsize=(min(12, 1.2*len(corr.columns)), 7))
-    sns.heatmap(corr, cmap="RdYlGn", vmin=-1, vmax=1, annot=False, square=False, ax=ax)
-    plt.tight_layout()
-    st.pyplot(fig, use_container_width=True)
-
-    # Dispersões para os Top 3 (opcional)
-    st.subheader("Dispersões (Top 3)")
-    for col in top5[:3]:
-        fig2, ax2 = plt.subplots(figsize=(6,4))
-        ax2.scatter(df[col], df["maduro_kg"], alpha=0.7)
-        ax2.set_xlabel(col)
-        ax2.set_ylabel("maduro_kg")
-        ax2.grid(True, alpha=.3)
-        st.pyplot(fig2, use_container_width=False)
-
-except Exception as e:
-    st.error(f"Erro no cálculo de correlações: {e}")
+with st.expander("📚 Como interpretar os resultados"):
+    st.markdown("""
+- **Pearson**: relação linear (pressupõe normalidade).  
+- **Spearman**: relação monotônica (robusto a outliers, não exige normalidade).  
+- **p-valor** (quando Pearson): < 0.05 sugere significância estatística.  
+- Correlação **não** implica causalidade — use como etapa exploratória.
+""")
