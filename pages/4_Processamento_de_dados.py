@@ -12,8 +12,8 @@ import streamlit as st
 # =========================
 # Página e cabeçalho
 # =========================
-st.set_page_config(page_title="Previsão da safra — Processamento", layout="wide")
-st.markdown("<h3>🛠️ Processamento dos dados para previsão</h3>", unsafe_allow_html=True)
+st.set_page_config(page_title="Processamento de dados", layout="wide")
+st.markdown("<h3>🛠️ Processamento dos dados para previsão da safra</h3>", unsafe_allow_html=True)
 st.caption("Seleciona Sentinel-2, calcula índices espectrais e extrai **mínimo, média e máximo** em **buffer** ao redor de **cada ponto** para **cada data**.")
 
 BASE_TMP = "/tmp/streamlit_dados"
