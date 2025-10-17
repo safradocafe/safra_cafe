@@ -229,16 +229,6 @@ for c in top5_cols:
                 sig = "✅ Significativa" if p < 0.05 else "⚠️ Não significativa"
                 st.caption(f"p-valor: {p:.4f} ({sig})")
 
-# Heatmap
-st.subheader("Heatmap de correlação")
-fig, ax = plt.subplots(figsize=(min(11, 0.9 * len(corr.columns)), 6))
-im = ax.imshow(corr.values, cmap="RdYlGn", vmin=-1, vmax=1)
-ax.set_xticks(range(len(corr.columns))); ax.set_xticklabels(corr.columns, rotation=45, ha="right")
-ax.set_yticks(range(len(corr.index)));   ax.set_yticklabels(corr.index)
-cbar = plt.colorbar(im, ax=ax, shrink=0.85, label="Correlação")
-plt.tight_layout()
-st.pyplot(fig, use_container_width=True)
-
 with st.expander("📚 Como interpretar os resultados"):
     st.markdown("""
 - **Pearson**: relação linear (pressupõe normalidade).  
