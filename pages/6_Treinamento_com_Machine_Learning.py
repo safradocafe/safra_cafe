@@ -262,16 +262,42 @@ if st.sidebar.button("▶️ Iniciar Treinamento e Avaliação"):
 
     st.dataframe(df_cmp.round(4), use_container_width=True)
 
+    # --- Gráfico Real vs. Predito (robusto) ---
+cols_needed = ["Produtividade_Real", "Produtividade_Predita"]
+df_plot = (
+    df_cmp[cols_needed]
+    .replace([np.inf, -np.inf], np.nan)
+    .dropna(subset=cols_needed)
+)
+
+if df_plot.empty or len(df_plot) < 2:
+    st.info("Não há pontos suficientes (após remoção de NaN/Inf) para plotar o gráfico.")
+else:
+    x = df_plot["Produtividade_Real"].astype(float).values
+    y = df_plot["Produtividade_Predita"].astype(float).values
+
+    vmin = float(np.nanmin([x.min(), y.min()]))
+    vmax = float(np.nanmax([x.max(), y.max()]))
+
+    # se todos os valores forem iguais, adiciona uma folga
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+        pad = 1.0 if np.isfinite(vmin) else 1.0
+        vmin = (vmin if np.isfinite(vmin) else 0.0) - pad
+        vmax = (vmax if np.isfinite(vmax) else 1.0) + pad
+
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.scatter(df_cmp["Produtividade_Real"], df_cmp["Produtividade_Predita"], alpha=0.7)
-    rng = [min(df_cmp["Produtividade_Real"].min(), df_cmp["Produtividade_Predita"].min()),
-           max(df_cmp["Produtividade_Real"].max(), df_cmp["Produtividade_Predita"].max())]
-    ax.plot(rng, rng, "r--", lw=2, label="Linha 1:1")
+    ax.scatter(x, y, alpha=0.7)
+    ax.plot([vmin, vmax], [vmin, vmax], "r--", lw=2, label="Linha 1:1")
+    ax.set_xlim(vmin, vmax)
+    ax.set_ylim(vmin, vmax)
     ax.set_xlabel("Produtividade Real (kg)")
     ax.set_ylabel("Produtividade Predita (kg)")
     ax.set_title("Produtividade Predita vs. Real (Teste)")
+    ax.grid(True, alpha=0.3)
     ax.legend()
-    st.pyplot(fig)
+
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 st.markdown("---")
 with st.expander("📘 Interpretação das Métricas"):
