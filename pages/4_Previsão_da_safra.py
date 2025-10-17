@@ -1,4 +1,4 @@
-# 4_Previsão_da_produtividade.py
+# 4_Previsão_da_safra.py
 import os, glob, json
 from datetime import datetime, date
 
@@ -10,17 +10,17 @@ import numpy as np
 import streamlit as st
 
 # =========================
-# Página e estilo
+# Página e cabeçalho
 # =========================
-st.set_page_config(page_title="Previsão da produtividade — Processamento de dados", layout="wide")
+st.set_page_config(page_title="Previsão da safra — Processamento", layout="wide")
 st.markdown("<h3>🛠️ Processamento dos dados para previsão</h3>", unsafe_allow_html=True)
 st.caption("Seleciona Sentinel-2, calcula índices espectrais e extrai **mínimo, média e máximo** em **buffer** ao redor de **cada ponto** para **cada data**.")
 
-# =========================
-# Utilitários / I/O
-# =========================
 BASE_TMP = "/tmp/streamlit_dados"
 
+# =========================
+# Utilitários
+# =========================
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base): return None
     cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
@@ -29,7 +29,7 @@ def _find_latest_save_dir(base=BASE_TMP):
     return cands[0]
 
 def load_cloud_inputs():
-    """Tenta carregar polígono e pontos salvos no passo 1."""
+    """Carrega polígono e pontos salvos no passo 1."""
     latest = _find_latest_save_dir()
     if not latest:
         return None, None, None
@@ -45,16 +45,16 @@ def load_cloud_inputs():
     if not (poly_path and os.path.exists(pts_path)):
         return None, None, latest
 
-    gdf_poly  = gpd.read_file(poly_path)
-    gdf_pts   = gpd.read_file(pts_path)
+    gdf_poly = gpd.read_file(poly_path)
+    gdf_pts  = gpd.read_file(pts_path)
 
-    # garante WGS84
+    # CRS -> WGS84
     if gdf_poly.crs is None or gdf_poly.crs.to_epsg() != 4326:
         gdf_poly = gdf_poly.set_crs(4326) if gdf_poly.crs is None else gdf_poly.to_crs(4326)
     if gdf_pts.crs is None or gdf_pts.crs.to_epsg() != 4326:
         gdf_pts = gdf_pts.set_crs(4326) if gdf_pts.crs is None else gdf_pts.to_crs(4326)
 
-    # ID do ponto (usa 'Code' se existir, senão cria)
+    # Garante coluna 'Code'
     if "Code" not in gdf_pts.columns:
         gdf_pts = gdf_pts.copy()
         gdf_pts["Code"] = np.arange(1, len(gdf_pts) + 1).astype(int)
@@ -62,15 +62,16 @@ def load_cloud_inputs():
     return gdf_poly, gdf_pts, latest
 
 def ensure_ee_init():
-    """Inicializa EE a partir de GEE_SA_KEY_JSON (Cloud Run)."""
+    """Inicializa EE a partir da variável de ambiente GEE_SA_KEY_JSON (Cloud Run)."""
     try:
         _ = ee.Number(1).getInfo()
         return
     except Exception:
         pass
+
     key_json = os.environ.get("GEE_SA_KEY_JSON", "")
     if not key_json:
-        st.error("❌ Variável de ambiente **GEE_SA_KEY_JSON** não encontrada. Configure-a no Cloud Run com o JSON da chave do service account.")
+        st.error("❌ Variável de ambiente **GEE_SA_KEY_JSON** não encontrada. Configure-a no Cloud Run com o conteúdo JSON da chave do service account.")
         st.stop()
     try:
         creds_dict = json.loads(key_json)
@@ -83,15 +84,15 @@ def ensure_ee_init():
 ensure_ee_init()
 
 # =========================
-# Parâmetros (sidebar)
+# Sidebar – parâmetros
 # =========================
 with st.sidebar:
     st.subheader("Configurações")
-    start = st.date_input("Início", value=date(2024,1,1), key="start_date")
-    end   = st.date_input("Fim", value=date.today(), key="end_date")
-    cloud_thr = st.slider("Nuvem máxima (%)", 0, 80, 15, 1, help="Filtro inicial por metadado CLOUDY_PIXEL_PERCENTAGE.")
+    start = st.date_input("Início", value=date(2024,1,1))
+    end   = st.date_input("Fim", value=date.today())
+    cloud_thr = st.slider("Nuvem máxima (%)", 0, 80, 15, 1)
     buffer_m  = st.slider("Raio do buffer (m)", 1, 30, 5, 1)
-    max_days  = st.slider("Máximo de datas a processar", 1, 120, 40, 1, help="Limite de segurança para não estourar cota/tempo.")
+    max_days  = st.slider("Máximo de datas a processar", 1, 120, 40, 1)
     indices_sel = st.multiselect(
         "Índices espectrais",
         ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"],
@@ -100,7 +101,7 @@ with st.sidebar:
     btn = st.button("▶️ Executar processamento")
 
 # =========================
-# Carrega insumos da nuvem
+# Carrega insumos
 # =========================
 gdf_poly, gdf_pts, latest_dir = load_cloud_inputs()
 if gdf_poly is None or gdf_pts is None:
@@ -109,13 +110,15 @@ if gdf_poly is None or gdf_pts is None:
 
 st.caption(f"Origem dos dados: `{latest_dir}`")
 st.write(f"**Polígono**: {len(gdf_poly)} geom | **Pontos**: {len(gdf_pts)} | Ex.:")
-st.dataframe(gdf_pts.head(), use_container_width=True)
+# 👉 Evita ArrowTypeError: não exibir 'geometry' no dataframe
+sample_cols = [c for c in gdf_pts.columns if c != "geometry"]
+st.dataframe(gdf_pts[sample_cols].head(), use_container_width=True)
 
 # =========================
-# Funções EE (máscara, índices, helpers)
+# Funções EE
 # =========================
 def mask_s2_sr(img):
-    """Máscara simples por QA60 (nuvem/cirrus)."""
+    """Máscara por QA60 (nuvem/cirrus)."""
     qa = img.select('QA60')
     cloudBitMask  = 1 << 10
     cirrusBitMask = 1 << 11
@@ -123,7 +126,7 @@ def mask_s2_sr(img):
     return img.updateMask(mask).copyProperties(img, img.propertyNames())
 
 def add_indices(img, wanted):
-    """Adiciona bandas de índices conforme 'wanted'."""
+    """Adiciona bandas dos índices selecionados."""
     def nd(a, b):
         return img.normalizedDifference([a, b])
     out = img
@@ -154,7 +157,7 @@ def add_indices(img, wanted):
     return out
 
 def best_image_on_date(geom, date_str, cloud_limit, wanted_idx):
-    """Retorna a MELHOR cena (menor nuvem do dia), mascarada e com índices."""
+    """Retorna a melhor cena do dia (menor nuvem), mascarada e com índices."""
     d0 = ee.Date(date_str)
     d1 = d0.advance(1, "day")
     coll = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -164,13 +167,12 @@ def best_image_on_date(geom, date_str, cloud_limit, wanted_idx):
             .map(mask_s2_sr)
             .sort('CLOUDY_PIXEL_PERCENTAGE', True))
     img = ee.Image(coll.first())
-    # fallback: se não houver, tenta mediana do dia (ainda é "data única")
     img = ee.Image(ee.Algorithms.If(img, img, ee.Image(coll.median())))
     img = add_indices(ee.Image(img), wanted_idx)
     return ee.Image(img)
 
 def list_dates(geom, start_d, end_d, cloud_limit):
-    """Lista datas (YYYY-MM-DD) com imagens disponíveis após filtros básicos."""
+    """Lista datas (YYYY-MM-DD) com cenas disponíveis após filtros básicos."""
     base = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
             .filterBounds(geom)
             .filterDate(ee.Date(str(start_d)), ee.Date(str(end_d)))
@@ -193,37 +195,41 @@ def process_all():
         st.warning("Nenhuma data encontrada no período/limite de nuvens.")
         st.stop()
 
-    # limita por segurança
+    # Limite de segurança
     dates = dates[:max_days]
 
-    # buffer nos pontos mantendo propriedades
+    # Buffer nos pontos mantendo propriedades
     def _buf(f):
         return ee.Feature(f.geometry().buffer(buffer_m)).copyProperties(f)
     ee_pts_buf = ee_pts.map(_buf)
 
-    # Redutor combinado (min, mean, max)
+    # Redutor: min + mean + max
     reducer = (ee.Reducer.min()
                .combine(ee.Reducer.mean(), sharedInputs=True)
                .combine(ee.Reducer.max(),  sharedInputs=True))
 
-    # Pré-estrutura do resultado (um dicionário por Code)
+    # Estrutura de acumulador por ponto
     base_out = gdf_pts[["Code"]].copy()
     base_out.index = base_out["Code"].astype(str)
     props_dict = {str(k): {} for k in base_out.index}
 
     prog = st.progress(0.0, text="Iniciando...")
+
     for i, d in enumerate(dates, start=1):
         prog.progress(i/len(dates), text=f"Processando {d} ({i}/{len(dates)})")
         img = best_image_on_date(ee_poly.geometry(), d, cloud_thr, indices_sel)
-        img_idx = img.select(indices_sel)  # bandas de índices apenas
+        img_idx = img.select(indices_sel)  # bandas de índices
 
-        # Reduz para TODOS os pontos de uma vez
-        feats = img_idx.reduceRegions(
+        # Reduz para TODOS os buffers de uma vez
+        feats_fc = img_idx.reduceRegions(
             collection=ee_pts_buf,
             reducer=reducer,
             scale=10,
             tileScale=2
-        ).getInfo().get("features", [])
+        )
+
+        # Obtém lista de features com propriedades (sem geometria) para reduzir payload
+        feats = ee.FeatureCollection(feats_fc).getInfo().get("features", [])
 
         # Coleta resultados por ponto
         for f in feats:
@@ -232,7 +238,6 @@ def process_all():
             if code not in props_dict:
                 continue
             for idx in indices_sel:
-                # nomes no reduceRegions: "<banda>_min|mean|max"
                 vmin  = p.get(f"{idx}_min",  None)
                 vmean = p.get(f"{idx}_mean", None)
                 vmax  = p.get(f"{idx}_max",  None)
@@ -263,13 +268,13 @@ def process_all():
     st.session_state["proc_paths"] = {"gpkg": out_gpkg, "csv": out_csv, "dates": dates}
 
 # =========================
-# Disparo
+# Rodar
 # =========================
 if btn:
-    with st.spinner("Processando (pode levar alguns minutos, dependendo do período e nº de datas)..."):
+    with st.spinner("Processando (pode levar alguns minutos)…"):
         try:
             process_all()
-            st.success("✅ Processamento concluído! Resultados prontos abaixo.")
+            st.success("✅ Processamento concluído! Resultados abaixo.")
         except Exception as e:
             st.error(f"Erro no processamento: {e}")
 
@@ -280,26 +285,24 @@ gdf_out = st.session_state.get("proc_result_gdf")
 paths   = st.session_state.get("proc_paths")
 
 if gdf_out is not None:
-    st.subheader("📄 Amostra dos resultados (largos por natureza)")
-    st.dataframe(gdf_out.drop(columns=["geometry"]).iloc[:, : min(20, gdf_out.shape[1]-1)], use_container_width=True)
+    st.subheader("📄 Amostra dos resultados (colunas parciais)")
+    preview = gdf_out.drop(columns=["geometry"]).iloc[:, : min(20, gdf_out.shape[1]-1)]
+    st.dataframe(preview, use_container_width=True)
 
-    # Downloads
     csv_bytes = gdf_out.drop(columns=["geometry"]).to_csv(index=False).encode("utf-8")
     st.download_button("📥 Baixar CSV completo", csv_bytes, file_name="indices_espectrais_pontos.csv", mime="text/csv")
 
-    # Aviso de salvamento na nuvem
-    st.info(f"Arquivos salvos temporariamente: **GPKG**: `{paths['gpkg']}` | **CSV**: `{paths['csv']}`")
+    st.info(f"Arquivos salvos: **GPKG**: `{paths['gpkg']}` | **CSV**: `{paths['csv']}`")
 
-    # Metadados
     with st.expander("ℹ️ Metadados do processamento"):
         st.write({
             "datas_processadas": paths.get("dates", []),
             "periodo": [str(start), str(end)],
             "n_pontos": len(gdf_pts),
-            "indices": indices_sel,
+            "indices": list(sorted(set([c.split('_')[1] for c in gdf_out.columns if '_' in c and c.split('_')[-1] in ('min','mean','max')]))),
             "buffer_m": buffer_m,
             "cloud_threshold_%": cloud_thr
         })
 else:
-    st.info("Defina o período, índices e clique em **Executar processamento**.")
+    st.info("Defina o período/índices e clique em **Executar processamento**.")
 
