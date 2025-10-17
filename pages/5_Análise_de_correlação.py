@@ -15,6 +15,7 @@ st.set_page_config(page_title="Análise de correlação", layout="wide")
 st.markdown("## 📊 Análise de Correlação entre índices espectrais e produtividade")
 
 BASE_TMP = "/tmp/streamlit_dados"
+TOKENS_IDX = ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]
 
 # =========================
 # Utilitários
@@ -47,23 +48,18 @@ def _sniff_delim_and_decimal(sample_bytes: bytes):
                 break
     return delim, decimal
 
-def _read_csv_robusto(path_or_bytes):
-    """Lê CSV com detecção de separador/decimal e corrige casos de 'uma coluna só'."""
-    if isinstance(path_or_bytes, (str, os.PathLike)):
-        with open(path_or_bytes, "rb") as f:
-            raw = f.read()
-    else:
-        raw = path_or_bytes
-
+@st.cache_data(show_spinner=False)
+def _read_csv_robusto_cached(raw: bytes):
+    """Lê CSV a partir de bytes com detecção de separador/decimal; cacheado por conteúdo."""
     delim, dec = _sniff_delim_and_decimal(raw)
+    df = None
     for enc in ("utf-8", "latin-1"):
         try:
             df = pd.read_csv(io.BytesIO(raw), sep=delim, decimal=dec, encoding=enc)
             break
         except Exception:
-            df = None
+            pass
     if df is None:
-        # última tentativa
         df = pd.read_csv(io.BytesIO(raw))
 
     # caso tenha ficado tudo em 1 coluna, tenta o outro separador
@@ -80,29 +76,31 @@ def _read_csv_robusto(path_or_bytes):
     df = df.dropna(axis=1, how="all")
     return df
 
-TOKENS_IDX = ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]
+@st.cache_data(show_spinner=False)
+def _prepare_for_corr_cached(raw: bytes):
+    """Trata o CSV bruto e retorna df pronto para correlação (cacheado)."""
+    df = _read_csv_robusto_cached(raw)
 
-def _filter_corr_columns(df: pd.DataFrame):
-    """Mantém maduro_kg e TODAS as colunas de índices (inclui _min/_mean/_max etc.)."""
+    # remove colunas extras
     drop_cols = [c for c in ["Code", "latitude", "longitude", "geometry"] if c in df.columns]
     df = df.drop(columns=drop_cols, errors="ignore")
 
+    # seleciona 'maduro_kg' + TODAS as colunas de índices
     idx_cols = [c for c in df.columns if any(tok in c for tok in TOKENS_IDX)]
     keep = (["maduro_kg"] if "maduro_kg" in df.columns else []) + idx_cols
-    if not keep:
-        return pd.DataFrame()
+    df = df[keep].copy()
 
-    # Coerção numérica
-    df_num = df[keep].copy()
-    for c in df_num.columns:
-        df_num[c] = pd.to_numeric(df_num[c], errors="coerce")
+    # coerção numérica
+    for c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Remove linhas sem alvo
-    if "maduro_kg" in df_num.columns:
-        df_num = df_num.dropna(subset=["maduro_kg"], how="any")
-    # Remove colunas totalmente NaN
-    df_num = df_num.dropna(axis=1, how="all")
-    return df_num
+    # remove linhas sem alvo
+    if "maduro_kg" in df.columns:
+        df = df.dropna(subset=["maduro_kg"], how="any")
+
+    # remove colunas totalmente NaN
+    df = df.dropna(axis=1, how="all")
+    return df
 
 def _choose_method(df: pd.DataFrame):
     """Testa normalidade (Shapiro) e decide Pearson (se >50% normais) ou Spearman."""
@@ -124,7 +122,22 @@ def _choose_method(df: pd.DataFrame):
     metodo = "pearson" if prop > 0.5 else "spearman"
     return metodo, prop
 
-def _corr_top5(df: pd.DataFrame, metodo: str):
+@st.cache_data(show_spinner=False)
+def _compute_corr_all_cached(df_bytes: bytes):
+    """
+    Computa método, proporção de normalidade, matriz de correlação,
+    série completa de correlações com maduro_kg, top5 e p-valores (se Pearson).
+    Cacheia pelo conteúdo serializado do DF (bytes).
+    """
+    # reconstrói df tratado a partir dos mesmos bytes
+    df = _prepare_for_corr_cached(df_bytes)
+    if df.empty or "maduro_kg" not in df.columns:
+        return None
+
+    metodo, prop_norm = _choose_method(df)
+    corr = df.corr(method=metodo)
+
+    # correlações com o alvo
     cols = [c for c in df.columns if c != "maduro_kg"]
     vals = {}
     for c in cols:
@@ -132,61 +145,66 @@ def _corr_top5(df: pd.DataFrame, metodo: str):
             vals[c] = df[["maduro_kg", c]].corr(method=metodo).iloc[0, 1]
         except Exception:
             vals[c] = np.nan
-    s = pd.Series(vals).dropna()
-    top5 = s.abs().sort_values(ascending=False).head(5).index.tolist()
-    return s, top5
+    s_all = pd.Series(vals).dropna()
+    top5_cols = s_all.abs().sort_values(ascending=False).head(5).index.tolist()
 
-def _pearson_pvals(df: pd.DataFrame, cols):
-    """p-valores de Pearson para o Top 5 (informativo)."""
     pvals = {}
-    a = pd.to_numeric(df["maduro_kg"], errors="coerce").dropna()
-    for c in cols:
-        b = pd.to_numeric(df[c], errors="coerce").dropna()
-        m = min(len(a), len(b))
-        if m < 3:
-            pvals[c] = np.nan
-            continue
-        try:
-            _, p = pearsonr(a.iloc[:m], b.iloc[:m])
-            pvals[c] = p
-        except Exception:
-            pvals[c] = np.nan
-    return pvals
+    if metodo == "pearson":
+        a = pd.to_numeric(df["maduro_kg"], errors="coerce").dropna()
+        for c in top5_cols:
+            b = pd.to_numeric(df[c], errors="coerce").dropna()
+            m = min(len(a), len(b))
+            if m < 3:
+                pvals[c] = np.nan
+            else:
+                try:
+                    _, p = pearsonr(a.iloc[:m], b.iloc[:m])
+                    pvals[c] = p
+                except Exception:
+                    pvals[c] = np.nan
+
+    # serialização leve para não duplicar DataFrame inteiro no cache
+    return {
+        "method": metodo,
+        "prop_norm": prop_norm,
+        "corr": corr,
+        "s_all": s_all,
+        "top5": top5_cols,
+        "pvals": pvals,
+    }
 
 # =========================
-# 1) Carregamento do CSV (auto + upload)
+# 1) Carregamento do CSV (auto + upload) — com cache por BYTES
 # =========================
 st.markdown("#### 1) Carregamento de dados")
 
 latest_csv_path = _find_latest_indices_csv()
-df_raw = None
+raw_bytes = None
 
+# automático
 if latest_csv_path and os.path.exists(latest_csv_path):
-    try:
-        df_raw = _read_csv_robusto(latest_csv_path)
-        st.success(f"✅ CSV carregado automaticamente: `{latest_csv_path}`")
-    except Exception as e:
-        st.error(f"Falha ao ler o CSV automático: {e}")
+    with open(latest_csv_path, "rb") as f:
+        raw_bytes = f.read()
+    st.success(f"✅ CSV carregado automaticamente: `{latest_csv_path}`")
 
+# upload manual (se existir, sobrescreve o automático)
 up = st.file_uploader("Ou selecione manualmente o CSV gerado na aba de Processamento", type=["csv"])
 if up is not None:
-    try:
-        df_raw = _read_csv_robusto(up.getvalue())
-        st.info("CSV enviado via upload foi carregado e será usado nesta análise.")
-    except Exception as e:
-        st.error(f"Falha ao ler o CSV enviado: {e}")
+    raw_bytes = up.getvalue()
+    st.info("CSV enviado via upload foi carregado e será usado nesta análise.")
 
-if df_raw is None or df_raw.empty:
+if not raw_bytes:
     st.error("❌ Nenhum CSV válido foi encontrado/enviado. Gere o arquivo na aba **Previsão da safra**.")
     st.stop()
 
 with st.expander("Pré-visualização do CSV (bruto)"):
-    st.dataframe(df_raw.head(), use_container_width=True)
+    df_raw_preview = _read_csv_robusto_cached(raw_bytes)
+    st.dataframe(df_raw_preview.head(), use_container_width=True)
 
 # =========================
-# 2) Tratamento: mantém 'maduro_kg' + TODOS os índices
+# 2) Tratamento: mantém 'maduro_kg' + TODOS os índices (cache)
 # =========================
-df = _filter_corr_columns(df_raw)
+df = _prepare_for_corr_cached(raw_bytes)
 if df.empty or "maduro_kg" not in df.columns:
     st.error("❌ Não foi possível encontrar 'maduro_kg' e/ou colunas de índices espectrais no CSV.")
     st.stop()
@@ -196,25 +214,29 @@ with st.expander("Visualizar dados tratados (maduro_kg + TODOS os índices)"):
     st.dataframe(df.head(), use_container_width=True)
 
 # =========================
-# 3) Análise automática
+# 3) Análise automática (cache)
 # =========================
 st.markdown("### 2) Análise estatística (automática)")
+res = _compute_corr_all_cached(raw_bytes)
+if res is None:
+    st.error("Não foi possível calcular as correlações.")
+    st.stop()
 
-metodo, prop_norm = _choose_method(df)
+metodo = res["method"]
+prop_norm = res["prop_norm"]
+corr = res["corr"]
+s_all = res["s_all"]
+top5_cols = res["top5"]
+pvals = res["pvals"]
+
 st.write(f"**Método selecionado:** {'Pearson' if metodo=='pearson' else 'Spearman'} "
          f"(variáveis com normalidade: {prop_norm:.0%})")
 
-# Matriz de correlação
-corr = df.corr(method=metodo)
 st.subheader("Matriz de correlação")
 st.dataframe(corr.style.background_gradient(cmap="RdYlGn").format("{:.2f}"),
              use_container_width=True)
 
-# Top 5
 st.subheader("Top 5 correlações (|r|) com **maduro_kg**")
-s_all, top5_cols = _corr_top5(df, metodo)
-pvals = _pearson_pvals(df, top5_cols) if metodo == "pearson" else {}
-
 for c in top5_cols:
     r = s_all[c]
     col1, col2 = st.columns([1, 4])
@@ -236,3 +258,4 @@ with st.expander("📚 Como interpretar os resultados"):
 - **p-valor** (quando Pearson): < 0.05 sugere significância estatística.  
 - Correlação **não** implica causalidade — use como etapa exploratória.
 """)
+
