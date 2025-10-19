@@ -1,3 +1,4 @@
+# pages/4_3_Predicao_e_Mapa.py
 import os, glob, io, csv
 from datetime import datetime
 
@@ -6,7 +7,7 @@ import pandas as pd
 import geopandas as gpd
 import streamlit as st
 import matplotlib.pyplot as plt
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon
 from shapely.prepared import prep
 from scipy.interpolate import Rbf
 import joblib
@@ -22,7 +23,8 @@ except Exception:
 # =========================
 st.set_page_config(layout="wide")
 st.markdown("## 🔮 Predição para todos os pontos + Mapa de variabilidade")
-st.caption("Usa automaticamente o **CSV de índices** salvo na aba Processamento e o **melhor modelo** salvo na aba Treinamento.")
+st.caption("Usa automaticamente o **CSV de índices** salvo na aba Processamento e o **melhor modelo** salvo na aba Treinamento. "
+           "Agora com produtividade média ajustada por densidade (pés/ha) e pés por amostra.")
 
 BASE_TMP = "/tmp/streamlit_dados"
 TOKENS_IDX = ["NDVI","GNDVI","NDRE","CCCI","MSAVI2","NDWI","NDMI","NBR","TWI2"]
@@ -31,11 +33,9 @@ TOKENS_IDX = ["NDVI","GNDVI","NDRE","CCCI","MSAVI2","NDWI","NDMI","NBR","TWI2"]
 # Utilidades de descoberta/IO
 # =========================
 def _find_latest_save_dir(base=BASE_TMP):
-    if not os.path.isdir(base):
-        return None
+    if not os.path.isdir(base): return None
     cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
-    if not cands:
-        return None
+    if not cands: return None
     cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return cands[0]
 
@@ -46,6 +46,7 @@ def _find_latest_indices_csv(base=BASE_TMP):
     return pats[0]
 
 def _find_latest_model(base=BASE_TMP):
+    # prioriza melhor_modelo_*.pkl (bundle), senão qualquer .pkl
     pats = glob.glob(os.path.join(base, "melhor_modelo_*.pkl"))
     if not pats:
         pats = glob.glob(os.path.join(base, "*.pkl"))
@@ -54,11 +55,7 @@ def _find_latest_model(base=BASE_TMP):
     return pats[0]
 
 def _find_points_gpkg(save_dir):
-    cands = [
-        "pontos_produtividade.gpkg",
-        "pontos_com_previsao.gpkg",
-        "prod_requinte_colab.gpkg",
-    ]
+    cands = ["pontos_produtividade.gpkg", "pontos_com_previsao.gpkg", "prod_requinte_colab.gpkg"]
     for nm in cands:
         p = os.path.join(save_dir, nm)
         if os.path.exists(p): return p
@@ -72,12 +69,7 @@ def _find_points_gpkg(save_dir):
     return None
 
 def _find_area_gpkg(save_dir):
-    cands = [
-        "area_amostral.gpkg",
-        "area_poligono.gpkg",
-        "area_total_poligono.gpkg",
-        "requinte_colab.gpkg",
-    ]
+    cands = ["area_amostral.gpkg", "area_poligono.gpkg", "area_total_poligono.gpkg", "requinte_colab.gpkg"]
     for nm in cands:
         p = os.path.join(save_dir, nm)
         if os.path.exists(p): return p
@@ -155,9 +147,12 @@ def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
     """Retorna máscara booleana (True = dentro do polígono)."""
     prep_poly = prep(poly_union)
     flat_pts = np.c_[xi_grid.ravel(), yi_grid.ravel()]
-    mask = np.fromiter((prep_poly.contains(Polygon([(x,y),(x+0.001,y),(x+0.001,y+0.001),(x,y+0.001)]).centroid) 
-                        for x,y in flat_pts), dtype=bool, count=flat_pts.shape[0])
-    # truque: testar centroides de 'mini células' para evitar custo de pointInPolygon repetido
+    # usar centroides de mini-células (barato e robusto)
+    mask = np.fromiter(
+        (prep_poly.contains(Polygon([(x,y),(x+0.001,y),(x+0.001,y+0.001),(x,y+0.001)]).centroid)
+         for x,y in flat_pts),
+        dtype=bool, count=flat_pts.shape[0]
+    )
     return mask.reshape(xi_grid.shape)
 
 # =========================
@@ -209,9 +204,16 @@ with st.expander("Prévia dos dados de entrada (maduro_kg + índices)"):
 # Carregar modelo e prever TODOS os pontos
 # =========================
 bundle = joblib.load(model_path)
-model   = bundle.get("model", None)
-features= bundle.get("features", [c for c in df_feat.columns if c != "maduro_kg"])
-scaler  = bundle.get("scaler", None)
+
+# O arquivo pode ser um bundle {"model":..., "features":..., "scaler":...} ou o estimador puro
+if isinstance(bundle, dict) and "model" in bundle:
+    model   = bundle.get("model")
+    features= bundle.get("features", [c for c in df_feat.columns if c != "maduro_kg"])
+    scaler  = bundle.get("scaler", None)
+else:
+    model   = bundle
+    features= [c for c in df_feat.columns if c != "maduro_kg"]
+    scaler  = None
 
 missing = [f for f in features if f not in df_feat.columns]
 if missing:
@@ -231,43 +233,41 @@ y_pred = model.predict(X)
 gdf_pred = gpd.GeoDataFrame(
     pd.DataFrame({
         **{c: df_feat[c].values for c in df_feat.columns if c != "geometry"},
-        "Produtividade_Predita_kg": y_pred
+        "maduro_kg_predito": y_pred
     }),
     geometry=gdf_pts.geometry, crs=gdf_pts.crs
 )
 
-# Conversão para sacas/ha (mesma fórmula usada no Colab compartilhado)
-gdf_pred["Produtividade_Predita_sc_ha"] = gdf_pred["Produtividade_Predita_kg"] * (1/60) * (1/0.0016)
-
-# Estatística resumo (produtividade média)
-media_kg   = float(np.nanmean(gdf_pred["Produtividade_Predita_kg"]))
-media_sc_ha= float(np.nanmean(gdf_pred["Produtividade_Predita_sc_ha"]))
-
 st.success("✅ Predição concluída para todos os pontos!")
-c1, c2 = st.columns(2)
-c1.metric("Produtividade média prevista (kg)", f"{media_kg:.2f}")
-c2.metric("Produtividade média prevista (sc/ha)", f"{media_sc_ha:.2f}")
-
-# Salvar CSV e GPKG
-ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-csv_out  = os.path.join(save_dir, f"produtividade_predita_pontos_{ts}.csv")
-gpkg_out = os.path.join(save_dir, f"produtividade_predita_pontos_{ts}.gpkg")
-
-gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(csv_out, index=False)
-gdf_pred.to_file(gpkg_out, driver="GPKG")
-
-st.caption(f"CSV salvo: `{csv_out}`")
-st.caption(f"GPKG salvo: `{gpkg_out}`")
-st.download_button("📥 Baixar CSV de predições", data=open(csv_out, "rb").read(),
-                   file_name=os.path.basename(csv_out), mime="text/csv")
 
 # =========================
-# Mapa de variabilidade (interpolação spline/RBF)
+# Parâmetros de produtividade média por propriedade
 # =========================
-st.markdown("---")
-st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista")
+st.markdown("### 📏 Parâmetros para produtividade média (adaptados por propriedade)")
 
-# Área (para máscara)
+# tenta densidade de parametros_area.json se existir
+densidade_padrao = 3000
+try:
+    pjson = os.path.join(save_dir, "parametros_area.json")
+    if os.path.exists(pjson):
+        with open(pjson, "r") as f:
+            _params = json.load(f)
+        if isinstance(_params.get("densidade_pes_ha"), (int, float)):
+            densidade_padrao = int(_params["densidade_pes_ha"])
+except Exception:
+    pass
+
+col_p1, col_p2, col_p3 = st.columns(3)
+with col_p1:
+    densidade_pes_ha = st.number_input("Densidade de plantas (pés/ha)", min_value=1, value=int(densidade_padrao), step=1)
+with col_p2:
+    pes_por_amostra = st.number_input("Pés por amostra (por ponto)", min_value=1, value=5, step=1)
+with col_p3:
+    kg_por_saca = st.number_input("Kg por saca", min_value=1, value=60, step=1)
+
+# =========================
+# Área do(s) polígono(s) (ha) em CRS projetado adequado
+# =========================
 if area_gpkg:
     gdf_area = gpd.read_file(area_gpkg)
     if gdf_area.crs is None: gdf_area = gdf_area.set_crs(4326)
@@ -275,27 +275,142 @@ if area_gpkg:
 else:
     gdf_area = gpd.GeoDataFrame(geometry=[gdf_pts.geometry.unary_union.envelope], crs=4326)
 
-# CRS UTM adequado (WGS84 UTM zona do centróide)
 epsg_utm = _auto_utm_epsg(gdf_area)
 gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
+area_total_ha = float(gdf_area_utm.area.sum() / 10_000.0)
+st.caption(f"• Área total do(s) polígono(s): **{area_total_ha:.4f} ha** (EPSG:{epsg_utm})")
+
+# =========================
+# Produtividade média ajustada (densidade/pés por amostra)
+# =========================
+area_por_ponto_ha = (pes_por_amostra / float(densidade_pes_ha))
+
+media_pred_kg_ponto = float(np.nanmean(gdf_pred["maduro_kg_predito"]))
+prod_pred_kg_ha  = media_pred_kg_ponto / area_por_ponto_ha
+# conversão igual à usada no projeto: kg → sacas/ha (kg ÷ 60 ÷ 0.0016)
+prod_pred_sc_ha  = prod_pred_kg_ha / kg_por_saca / 0.0016
+
+# se houver coluna real, calcula também
+prod_real_kg_ha = prod_real_sc_ha = None
+if "maduro_kg" in gdf_pred.columns:
+    media_real_kg_ponto = float(np.nanmean(gdf_pred["maduro_kg"]))
+    if np.isfinite(media_real_kg_ponto):
+        prod_real_kg_ha = media_real_kg_ponto / area_por_ponto_ha
+        prod_real_sc_ha = prod_real_kg_ha / kg_por_saca / 0.0016
+
+# Totais na propriedade
+pred_total_kg = prod_pred_kg_ha * area_total_ha
+pred_total_sc = prod_pred_sc_ha * area_total_ha
+real_total_kg = real_total_sc = None
+if prod_real_kg_ha is not None:
+    real_total_kg = prod_real_kg_ha * area_total_ha
+    real_total_sc = prod_real_sc_ha * area_total_ha
+
+st.markdown("### 📈 Produtividade média (ajustada por densidade)")
+c1, c2, c3 = st.columns(3)
+with c1: st.metric("Área por ponto (ha)", f"{area_por_ponto_ha:.6f}")
+with c2: st.metric("Predita (kg/ha)", f"{prod_pred_kg_ha:.2f}")
+with c3: st.metric("Predita (sacas/ha)", f"{prod_pred_sc_ha:.2f}")
+
+if prod_real_sc_ha is not None:
+    c4, c5 = st.columns(2)
+    with c4: st.metric("REAL (kg/ha)", f"{prod_real_kg_ha:.2f}")
+    with c5: st.metric("REAL (sacas/ha)", f"{prod_real_sc_ha:.2f}")
+
+st.markdown("### 🧮 Produção total estimada na propriedade")
+c6, c7 = st.columns(2)
+with c6: st.metric("Total predito (kg)", f"{pred_total_kg:.0f}")
+with c7: st.metric("Total predito (sacas)", f"{pred_total_sc:.2f}")
+
+if (real_total_kg is not None) and (real_total_sc is not None):
+    c8, c9 = st.columns(2)
+    with c8: st.metric("Total REAL (kg)", f"{real_total_kg:.0f}")
+    with c9: st.metric("Total REAL (sacas)", f"{real_total_sc:.2f}")
+
+# Persistência opcional dos parâmetros
+try:
+    params_out = {
+        "densidade_pes_ha": float(densidade_pes_ha),
+        "pes_por_amostra": int(pes_por_amostra),
+        "kg_por_saca": int(kg_por_saca),
+        "area_total_ha": float(area_total_ha),
+    }
+    pjson = os.path.join(save_dir, "parametros_area.json")
+    if os.path.exists(pjson):
+        with open(pjson, "r") as f:
+            old = json.load(f)
+        old.update(params_out)
+        with open(pjson, "w") as f:
+            json.dump(old, f, ensure_ascii=False, indent=2)
+    else:
+        with open(pjson, "w") as f:
+            json.dump(params_out, f, ensure_ascii=False, indent=2)
+    st.caption(f"Parâmetros atualizados em: `{pjson}`")
+except Exception:
+    pass
+
+# =========================
+# Salvar CSV/GPKG + métricas
+# =========================
+ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+csv_out  = os.path.join(save_dir, f"produtividade_predita_pontos_{ts}.csv")
+gpkg_out = os.path.join(save_dir, f"produtividade_predita_pontos_{ts}.gpkg")
+met_out  = os.path.join(save_dir, f"produtividade_media_ajustada_{ts}.csv")
+
+# conversões derivadas (mantém kg predito por ponto e adiciona sacas/ha por ponto se quiser)
+gdf_pred["prod_sc_ha_por_ponto"] = (gdf_pred["maduro_kg_predito"] / area_por_ponto_ha) / kg_por_saca / 0.0016
+
+gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(csv_out, index=False)
+gdf_pred.to_file(gpkg_out, driver="GPKG")
+
+df_metrics = pd.DataFrame([{
+    "densidade_pes_ha": densidade_pes_ha,
+    "pes_por_amostra": pes_por_amostra,
+    "kg_por_saca": kg_por_saca,
+    "area_total_ha": area_total_ha,
+    "area_por_ponto_ha": area_por_ponto_ha,
+    "pred_kg_ha": prod_pred_kg_ha,
+    "pred_sc_ha": prod_pred_sc_ha,
+    "pred_total_kg": pred_total_kg,
+    "pred_total_sacas": pred_total_sc,
+    "real_kg_ha": prod_real_kg_ha if prod_real_kg_ha is not None else np.nan,
+    "real_sc_ha": prod_real_sc_ha if prod_real_sc_ha is not None else np.nan,
+    "real_total_kg": real_total_kg if real_total_kg is not None else np.nan,
+    "real_total_sacas": real_total_sc if real_total_sc is not None else np.nan,
+}])
+df_metrics.to_csv(met_out, index=False)
+
+st.caption(f"CSV (predições por ponto): `{csv_out}`")
+st.caption(f"GPKG (predições por ponto): `{gpkg_out}`")
+st.caption(f"CSV (métricas ajustadas): `{met_out}`")
+st.download_button("📥 Baixar CSV de predições", data=open(csv_out, "rb").read(),
+                   file_name=os.path.basename(csv_out), mime="text/csv")
+st.download_button("📥 Baixar CSV de métricas", data=open(met_out, "rb").read(),
+                   file_name=os.path.basename(met_out), mime="text/csv")
+
+# =========================
+# Mapa de variabilidade (interpolação spline/RBF)
+# =========================
+st.markdown("---")
+st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista")
+
 gdf_pred_utm = gdf_pred.to_crs(epsg=epsg_utm)
 
 # Grade regular (5 m)
 xmin, ymin, xmax, ymax = gdf_area_utm.total_bounds
-res = 5.0  # metros
+res = 5.0
 xi = np.arange(xmin, xmax, res)
 yi = np.arange(ymin, ymax, res)
 xi_grid, yi_grid = np.meshgrid(xi, yi)
 
-# Dados para spline (x, y, z)
+# Dados para RBF thin-plate
 xy = np.array([(p.x, p.y) for p in gdf_pred_utm.geometry])
-z  = gdf_pred_utm["Produtividade_Predita_kg"].astype(float).values
+z  = gdf_pred_utm["maduro_kg_predito"].astype(float).values
 
-# Interpolação RBF thin-plate spline
 rbf = Rbf(xy[:,0], xy[:,1], z, function="thin_plate")
 zi = rbf(xi_grid, yi_grid)
 
-# Máscara por polígono
+# Máscara pelo polígono
 poly_union = gdf_area_utm.geometry.unary_union
 mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
 zi_masked = np.full_like(zi, np.nan, dtype=float)
