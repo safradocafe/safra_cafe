@@ -1,4 +1,4 @@
-# pages/4_3_Predicao_por_Safra.py
+# pages/7_Previsão_da_safra.py
 import os, glob, json, io, csv
 from datetime import datetime
 
@@ -26,7 +26,7 @@ BASE_TMP = "/tmp/streamlit_dados"
 TOKENS_IDX = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
 
 # =========================
-# Descoberta de arquivos na nuvem
+# Descoberta de arquivos
 # =========================
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base): return None
@@ -69,7 +69,7 @@ def _find_best_model(base=BASE_TMP):
     return pats[0]
 
 # =========================
-# Conexão GEE (Service Account)
+# GEE init
 # =========================
 def ensure_ee_init():
     try:
@@ -77,8 +77,6 @@ def ensure_ee_init():
         return
     except Exception:
         pass
-
-    # 1) tentar secrets
     if "GEE_CREDENTIALS" in st.secrets:
         try:
             creds = dict(st.secrets["GEE_CREDENTIALS"])
@@ -86,12 +84,9 @@ def ensure_ee_init():
                 email=creds["client_email"],
                 key_data=json.dumps(creds)
             )
-            ee.Initialize(credentials)
-            return
+            ee.Initialize(credentials); return
         except Exception as e:
-            st.warning(f"Falha ao iniciar GEE via secrets: {e}")
-
-    # 2) tentar variável de ambiente
+            st.warning(f"Falha via secrets: {e}")
     key_json = os.environ.get("GEE_SA_KEY_JSON", "")
     if key_json:
         try:
@@ -100,18 +95,16 @@ def ensure_ee_init():
                 email=creds["client_email"],
                 key_data=key_json
             )
-            ee.Initialize(credentials)
-            return
+            ee.Initialize(credentials); return
         except Exception as e:
-            st.warning(f"Falha ao iniciar GEE via env: {e}")
-
+            st.warning(f"Falha via env: {e}")
     st.error("❌ Credenciais do Google Earth Engine não encontradas.")
     st.stop()
 
 ensure_ee_init()
 
 # =========================
-# Utilidades de leitura/CSV robusto (se precisar)
+# CSV robusto (se/nquando precisar)
 # =========================
 def _sniff_delim_and_decimal(sample_bytes: bytes):
     text = sample_bytes.decode("utf-8", errors="ignore")
@@ -154,60 +147,47 @@ def _read_csv_robusto(path: str) -> pd.DataFrame:
     return df
 
 # =========================
-# Carregar insumos da nuvem
+# Carregar insumos
 # =========================
 save_dir = _find_latest_save_dir()
 if not save_dir:
-    st.error("❌ Não encontrei diretório de salvamento em /tmp/streamlit_dados.")
-    st.stop()
+    st.error("❌ Não encontrei diretório de salvamento em /tmp/streamlit_dados."); st.stop()
 
 pts_gpkg = _find_points_gpkg(save_dir)
 area_gpkg = _find_area_gpkg(save_dir)
 model_path = _find_best_model(BASE_TMP)
 params_path = os.path.join(save_dir, "parametros_area.json")
 
-if not pts_gpkg:
-    st.error("❌ GPKG de pontos não encontrado.")
-    st.stop()
-if not area_gpkg:
-    st.error("❌ GPKG de área (polígono) não encontrado.")
-    st.stop()
-if not model_path:
-    st.error("❌ Modelo salvo não encontrado (melhor_modelo_*.pkl). Execute a aba de Treinamento.")
-    st.stop()
+if not pts_gpkg: st.error("❌ GPKG de pontos não encontrado."); st.stop()
+if not area_gpkg: st.error("❌ GPKG de área não encontrado."); st.stop()
+if not model_path: st.error("❌ Modelo salvo não encontrado (melhor_modelo_*.pkl)."); st.stop()
 
-# parâmetros (densidade, produtividade, buffer, nuvens)
 params = {}
 if os.path.exists(params_path):
     try:
-        with open(params_path, "r") as f:
-            params = json.load(f)
-    except Exception:
-        pass
+        with open(params_path, "r") as f: params = json.load(f)
+    except Exception: pass
 
 st.caption(f"📂 Origem: `{save_dir}`")
 st.caption(f"📍 Pontos: `{os.path.basename(pts_gpkg)}` | 🗺️ Área: `{os.path.basename(area_gpkg)}` | 🧠 Modelo: `{os.path.basename(model_path)}`")
 
 # =========================
-# Leitura área/pontos e ROI
+# Área e pontos
 # =========================
 gdf_area = gpd.read_file(area_gpkg)
-if gdf_area.crs is None: gdf_area = gdf_area.set_crs(4326)
-else: gdf_area = gdf_area.to_crs(4326)
+gdf_area = gdf_area.set_crs(4326) if gdf_area.crs is None else gdf_area.to_crs(4326)
 
 gdf_pts = gpd.read_file(pts_gpkg)
-if gdf_pts.crs is None: gdf_pts = gdf_pts.set_crs(4326)
-else: gdf_pts = gdf_pts.to_crs(4326)
+gdf_pts = gdf_pts.set_crs(4326) if gdf_pts.crs is None else gdf_pts.to_crs(4326)
 
 roi = geemap.gdf_to_ee(gdf_area[["geometry"]])
 
 # =========================
-# Sidebar: parâmetros do usuário
+# Sidebar parâmetros
 # =========================
 st.sidebar.header("Parâmetros")
-bandas = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
+bandas = TOKENS_IDX[:]  # mantém a mesma lista
 
-# Datas
 c1, c2 = st.sidebar.columns(2)
 train_start = c1.date_input("Treino: início", value=pd.to_datetime(params.get("data_inicio","2023-08-01")).date())
 train_end   = c2.date_input("Treino: fim",    value=pd.to_datetime(params.get("data_fim","2024-05-31")).date())
@@ -216,15 +196,13 @@ p1, p2 = st.sidebar.columns(2)
 pred_start = p1.date_input("Predição: início", value=pd.to_datetime(params.get("pred_inicio","2024-08-01")).date())
 pred_end   = p2.date_input("Predição: fim",    value=pd.to_datetime(params.get("pred_fim","2025-05-31")).date())
 
-# Nuvens / Buffer
-cloud_train = int(params.get("cloud_thr", 5))         # usar mesmo do processamento
-buffer_m    = int(params.get("buffer_m", 5))          # usar mesmo do processamento
+cloud_train = int(params.get("cloud_thr", 5))     # do processamento
+buffer_m    = int(params.get("buffer_m", 5))      # do processamento
 cloud_pred  = st.sidebar.slider("Nuvens para PREDIÇÃO (%)", 0, 60, 20, 1)
-
 st.sidebar.caption(f"Treinamento usa os parâmetros do processamento: nuvens **{cloud_train}%**, buffer **{buffer_m} m**.")
 
 # =========================
-# Funções GEE (iguais ao seu Colab, com as adaptações)
+# Funções GEE
 # =========================
 def processar_colecao(start_date, end_date, roi, limite_nuvens):
     col = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -274,8 +252,6 @@ def processar_ponto(ponto, colecao_imagens, lista_indices, buffer_m):
     def por_imagem(img):
         return extrair_estatisticas_ponto_imagem(img, ponto, lista_indices, buffer_m)
     fc = colecao_imagens.map(por_imagem)
-
-    # Combina (último valor de cada banda/estatística na janela — igual ao seu Colab adaptado)
     def _combinar(feat, acc):
         return ee.Dictionary(acc).combine(ee.Feature(feat).toDictionary(), overwrite=True)
     props = ee.Dictionary(fc.iterate(_combinar, ee.Dictionary({})))
@@ -285,85 +261,104 @@ def extrair_dados_min_mean_max(colecao, gdf_pontos, nomes_indices, buffer_m):
     pts_ee = geemap.gdf_to_ee(gdf_pontos)
     pts_proc = pts_ee.map(lambda pt: processar_ponto(pt, colecao, nomes_indices, buffer_m))
     gdf_out = geemap.ee_to_gdf(pts_proc)
-    # mantém colunas originais (exceto geometry) quando disponíveis
     for col in gdf_pontos.columns:
         if col not in gdf_out.columns and col != "geometry":
             gdf_out[col] = gdf_pontos[col].values
     return gdf_out
 
 # =========================
-# Botão de execução
+# Funções utilitárias de modelo
+# =========================
+def _load_model_bundle(path):
+    """Suporta .pkl como estimador OU bundle {'model', 'features', 'scaler'}."""
+    obj = joblib.load(path)
+    if isinstance(obj, dict):
+        model   = obj.get("model")
+        feats   = obj.get("features")
+        scaler  = obj.get("scaler")
+        return model, feats, scaler
+    else:
+        return obj, None, None
+
+def _align_features(df, wanted):
+    """Garante colunas na ordem correta, usando apenas interseção disponível."""
+    cols = [c for c in wanted if c in df.columns]
+    missing = [c for c in wanted if c not in df.columns]
+    return df[cols].copy(), cols, missing
+
+def _maybe_scale_fit_transform(scaler, X_train, X_pred):
+    """Usa scaler se existir; se não estiver ajustado, ajusta no X_train."""
+    if scaler is None:
+        return X_train.values, X_pred.values
+    try:
+        # tenta transformar direto (scaler já ajustado)
+        Xt = scaler.transform(X_train.values)
+        Xp = scaler.transform(X_pred.values)
+        return Xt, Xp
+    except Exception:
+        # ajusta então
+        scaler.fit(X_train.values)
+        Xt = scaler.transform(X_train.values)
+        Xp = scaler.transform(X_pred.values)
+        return Xt, Xp
+
+# =========================
+# Executar
 # =========================
 if st.button("▶️ Reprocessar índices no GEE e prever"):
-    with st.spinner("Processando… isso pode levar alguns minutos."):
+    with st.spinner("Processando…"):
         # 1) Coleções
         col_train = processar_colecao(train_start, train_end, roi, cloud_train)
         col_pred  = processar_colecao(pred_start,  pred_end,  roi, cloud_pred)
 
-        # 2) Extrair estatísticas (min/mean/max) por ponto
+        # 2) Extrair estatísticas por ponto
         gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
         gdf_pred  = extrair_dados_min_mean_max(col_pred,  gdf_pts, TOKENS_IDX, buffer_m)
 
-        # 3) Preparar X/y de TREINO (iguais ao seu Colab)
-        feats = [f"{b}_{stat}" for b in TOKENS_IDX for stat in ["min","mean","max"]]
+        # 3) Preparar features (min/mean/max)
+        feats_all = [f"{b}_{stat}" for b in TOKENS_IDX for stat in ["min","mean","max"]]
         for df_ in (gdf_train, gdf_pred):
-            for c in feats:
+            for c in feats_all:
                 if c in df_.columns:
                     df_[c] = pd.to_numeric(df_[c], errors="coerce")
 
         if "maduro_kg" not in gdf_train.columns:
-            st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento.")
-            st.stop()
+            st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento."); st.stop()
 
-        X = gdf_train[feats].copy()
-        y = pd.to_numeric(gdf_train["maduro_kg"], errors="coerce")
-        X_pred = gdf_pred[feats].copy()
+        # 4) Carrega modelo salvo (suportando bundle ou estimador)
+        modelo, feats_bundle, scaler = _load_model_bundle(model_path)
 
-        # 4) Carrega o MELHOR MODELO salvo e ajusta com X,y (como no Colab)
-        modelo = joblib.load(model_path)
-        # se tiver feature_names_in_, ótimo; caso não, seguimos mesmo assim
-        try:
-            _ = getattr(modelo, "feature_names_in_", None)
-        except Exception:
-            pass
+        if modelo is None or not hasattr(modelo, "fit"):
+            st.error("❌ Arquivo de modelo não contém um estimador válido em 'model'."); st.stop()
 
-        modelo.fit(X.values, y.values)
+        # Escolhe features-alvo:
+        feats_target = feats_bundle if feats_bundle else feats_all
 
-        # 5) Predição (como no Colab)
-        yhat = modelo.predict(X_pred.values)
+        # Alinha X_train / X_pred à lista de features que o modelo espera
+        X_train_df, used_feats, missing_train = _align_features(gdf_train, feats_target)
+        X_pred_df, _,          missing_pred  = _align_features(gdf_pred,  feats_target)
+
+        if not used_feats:
+            st.error("❌ Nenhuma feature disponível para o modelo após o alinhamento."); st.stop()
+
+        # Escalonamento se existir scaler no bundle
+        X_train_mat, X_pred_mat = _maybe_scale_fit_transform(scaler, X_train_df, X_pred_df)
+
+        # y de treino
+        y = pd.to_numeric(gdf_train["maduro_kg"], errors="coerce").values
+
+        # 5) Ajuste (como no seu Colab) e predição
+        modelo.fit(X_train_mat, y)
+        yhat = modelo.predict(X_pred_mat)
+
+        # 6) Salvar resultados — conversão igual ao seu Colab
         gdf_pred["produtividade_kg"] = yhat
-        # Conversão EXATA do seu Colab:
         gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (1/60) * (1/0.0016)
 
-        # 6) Adaptação 6 — parâmetros da propriedade (densidade/área/produtividade média)
-        #    (exibição e registro — cálculo de área por ponto conforme exemplo do seu Colab)
-        densidade = params.get("densidade_pes_ha", None)
-        produtividade_media = params.get("produtividade_media_sacas_ha", None)
-
-        # área do(s) polígono(s) em ha (usa CRS métrico adequado)
-        try:
-            from pyproj import CRS
-            epsg_guess = 32722
-            centroid = gdf_area.geometry.unary_union.centroid
-            zone = int((float(centroid.x) + 180)//6) + 1
-            epsg_guess = int(f"327{zone:02d}") if float(centroid.y) < 0 else int(f"326{zone:02d}")
-            gdf_area_m = gdf_area.to_crs(epsg=epsg_guess)
-            area_total_ha = float(gdf_area_m.area.sum()/10_000.0)
-        except Exception:
-            area_total_ha = np.nan
-
-        total_pontos_amostrais = len(gdf_pts)
-        pes_por_amostra = 5
-        area_por_ponto_ha = None
-        if densidade:
-            area_por_ponto_ha = (1/float(densidade)) * pes_por_amostra
-
-        # 7) Salvar resultados
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_csv = os.path.join(save_dir, f"predicao_sem_datas_{ts}.csv")
         gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(out_csv, index=False)
 
-        # metadados úteis (datas, nuvens, buffer e parâmetros)
         meta = {
             "treino_inicio": str(train_start),
             "treino_fim": str(train_end),
@@ -372,13 +367,10 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
             "nuvens_treino_%": cloud_train,
             "nuvens_pred_%": cloud_pred,
             "buffer_m": buffer_m,
-            "area_total_ha": area_total_ha,
-            "densidade_pes_ha": densidade,
-            "produtividade_media_sacas_ha": produtividade_media,
-            "total_pontos_amostrais": total_pontos_amostrais,
-            "area_por_ponto_ha": area_por_ponto_ha,
             "modelo_usado": os.path.basename(model_path),
-            "bandas": TOKENS_IDX,
+            "features_usadas": used_feats,
+            "missing_train_cols": missing_train,
+            "missing_pred_cols": missing_pred,
         }
         out_meta = os.path.join(save_dir, f"predicao_params_{ts}.json")
         with open(out_meta, "w") as f:
