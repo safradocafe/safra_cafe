@@ -1,5 +1,5 @@
 # pages/7_Previsão_da_safra.py
-import os, glob, json, io, csv
+import os, glob, json, io, csv, unicodedata
 from datetime import datetime
 
 import ee
@@ -166,7 +166,8 @@ params = {}
 if os.path.exists(params_path):
     try:
         with open(params_path, "r") as f: params = json.load(f)
-    except Exception: pass
+    except Exception:
+        pass
 
 st.caption(f"📂 Origem: `{save_dir}`")
 st.caption(f"📍 Pontos: `{os.path.basename(pts_gpkg)}` | 🗺️ Área: `{os.path.basename(area_gpkg)}` | 🧠 Modelo: `{os.path.basename(model_path)}`")
@@ -267,7 +268,7 @@ def extrair_dados_min_mean_max(colecao, gdf_pontos, nomes_indices, buffer_m):
     return gdf_out
 
 # =========================
-# Funções utilitárias de modelo
+# Funções utilitárias de modelo (NOVO alinhamento)
 # =========================
 def _load_model_bundle(path):
     """Suporta .pkl como estimador OU bundle {'model', 'features', 'scaler'}."""
@@ -280,23 +281,64 @@ def _load_model_bundle(path):
     else:
         return obj, None, None
 
-def _align_features(df, wanted):
-    """Garante colunas na ordem correta, usando apenas interseção disponível."""
-    cols = [c for c in wanted if c in df.columns]
-    missing = [c for c in wanted if c not in df.columns]
-    return df[cols].copy(), cols, missing
+def _norm(s: str) -> str:
+    s = s.strip().lower().replace(" ", "_")
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")  # remove acento
+    s = "".join(ch for ch in s if ch.isalnum() or ch in "._-")
+    s = s.replace("__", "_")
+    return s
+
+def _smart_align(Xdf: pd.DataFrame, expected: list[str]) -> tuple[pd.DataFrame, list[str], list[str], dict]:
+    """
+    Casa expected features com colunas de Xdf, de forma case-insensitive e sem acento.
+    Retorna: Xdf_alinhado, used_feats (na ordem esperada), missing_feats, mapping_dict
+    """
+    cols_map = {_norm(c): c for c in Xdf.columns}  # normalizado -> original
+    used = []
+    missing = []
+    mapping = {}
+    for f in expected:
+        nf = _norm(f)
+        if nf in cols_map:
+            used.append(cols_map[nf])
+            mapping[f] = cols_map[nf]
+        else:
+            # fallback: 'ndvi' vira 'ndvi_mean' se existir só essa
+            for stat in ["_mean","_min","_max"]:
+                alt = nf + stat
+                if alt in cols_map:
+                    used.append(cols_map[alt])
+                    mapping[f] = cols_map[alt]
+                    break
+            else:
+                missing.append(f)
+    if used:
+        return Xdf[used].copy(), used, missing, mapping
+    # fallback final: usa todas as colunas *_min/_mean/_max disponíveis
+    idx_cols = [c for c in Xdf.columns if any(tok.lower() in _norm(c) for tok in TOKENS_IDX)]
+    fallback = sorted([c for c in idx_cols if any(s in c for s in ["_min","_mean","_max"])])
+    if not fallback:
+        return pd.DataFrame(), [], expected, {}
+    return Xdf[fallback].copy(), fallback, expected, {f:"<fallback>" for f in expected}
+
+def _expected_features_from(model, feats_bundle: list[str] | None, feats_all: list[str]) -> list[str]:
+    if feats_bundle and len(feats_bundle) > 0:
+        return list(feats_bundle)
+    if hasattr(model, "feature_names_in_"):
+        try:
+            return list(model.feature_names_in_)
+        except Exception:
+            pass
+    return feats_all
 
 def _maybe_scale_fit_transform(scaler, X_train, X_pred):
-    """Usa scaler se existir; se não estiver ajustado, ajusta no X_train."""
     if scaler is None:
         return X_train.values, X_pred.values
     try:
-        # tenta transformar direto (scaler já ajustado)
         Xt = scaler.transform(X_train.values)
         Xp = scaler.transform(X_pred.values)
         return Xt, Xp
     except Exception:
-        # ajusta então
         scaler.fit(X_train.values)
         Xt = scaler.transform(X_train.values)
         Xp = scaler.transform(X_pred.values)
@@ -325,33 +367,40 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         if "maduro_kg" not in gdf_train.columns:
             st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento."); st.stop()
 
-        # 4) Carrega modelo salvo (suportando bundle ou estimador)
+        # 4) Carrega modelo salvo (bundle ou estimador)
         modelo, feats_bundle, scaler = _load_model_bundle(model_path)
-
         if modelo is None or not hasattr(modelo, "fit"):
             st.error("❌ Arquivo de modelo não contém um estimador válido em 'model'."); st.stop()
 
-        # Escolhe features-alvo:
-        feats_target = feats_bundle if feats_bundle else feats_all
+        # 5) Determina features esperadas e faz alinhamento inteligente
+        feats_expected = _expected_features_from(modelo, feats_bundle, feats_all)
+        X_train_df, used_feats, missing_train, mapping = _smart_align(gdf_train, feats_expected)
+        X_pred_df,  _,          missing_pred, _       = _smart_align(gdf_pred,  used_feats)
 
-        # Alinha X_train / X_pred à lista de features que o modelo espera
-        X_train_df, used_feats, missing_train = _align_features(gdf_train, feats_target)
-        X_pred_df, _,          missing_pred  = _align_features(gdf_pred,  feats_target)
+        if X_train_df.empty or X_pred_df.empty:
+            st.error("❌ Nenhuma feature disponível para o modelo após o alinhamento (mesmo com fallback).")
+            st.stop()
 
-        if not used_feats:
-            st.error("❌ Nenhuma feature disponível para o modelo após o alinhamento."); st.stop()
+        # Relatório de mapeamento (transparência)
+        if mapping:
+            st.info("Mapeamento de features aplicado (modelo → coluna do dataset):\n"
+                    + "\n".join([f"- {k} → {v}" for k,v in mapping.items()]))
+        if missing_train:
+            st.warning("Colunas esperadas ausentes no treino: " + ", ".join(missing_train))
+        if missing_pred:
+            st.warning("Colunas esperadas ausentes na predição: " + ", ".join(missing_pred))
 
-        # Escalonamento se existir scaler no bundle
+        # 6) Escalonar (se houver scaler)
         X_train_mat, X_pred_mat = _maybe_scale_fit_transform(scaler, X_train_df, X_pred_df)
 
-        # y de treino
+        # 7) y de treino
         y = pd.to_numeric(gdf_train["maduro_kg"], errors="coerce").values
 
-        # 5) Ajuste (como no seu Colab) e predição
+        # 8) Ajuste e predição
         modelo.fit(X_train_mat, y)
         yhat = modelo.predict(X_pred_mat)
 
-        # 6) Salvar resultados — conversão igual ao seu Colab
+        # 9) Salvar resultados — conversão igual à usada anteriormente
         gdf_pred["produtividade_kg"] = yhat
         gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (1/60) * (1/0.0016)
 
