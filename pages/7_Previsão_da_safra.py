@@ -1,36 +1,32 @@
-# pages/4_3_Predicao_e_Mapa.py
-import os, glob, io, csv, json
+# pages/4_3_Predicao_por_Safra.py
+import os, glob, json, io, csv
 from datetime import datetime
 
-import numpy as np
+import ee
+import geemap
 import pandas as pd
 import geopandas as gpd
+import numpy as np
 import streamlit as st
-import matplotlib.pyplot as plt
-from shapely.geometry import Polygon
-from shapely.prepared import prep
-from scipy.interpolate import Rbf
 import joblib
-
-try:
-    from pyproj import Transformer
-    HAVE_PYPROJ = True
-except Exception:
-    HAVE_PYPROJ = False
+import warnings
+warnings.filterwarnings("ignore")
 
 # =========================
 # Página / estilo
 # =========================
 st.set_page_config(layout="wide")
-st.markdown("## 🔮 Predição para todos os pontos + Mapa de variabilidade")
-st.caption("Usa automaticamente o **CSV de índices** salvo na aba Processamento e o **melhor modelo** salvo na aba Treinamento. "
-           "As métricas de produtividade dependem da **densidade de plantas (pés/ha)** informada pelo usuário.")
+st.markdown("## ☕ Predição por safra (reprocessar com GEE)")
+st.caption(
+    "Recalcula índices no GEE para **treinamento** (safra passada) e **predição** (safra futura) "
+    "usando o polígono e os pontos salvos na nuvem. Em seguida aplica o **melhor modelo salvo**."
+)
 
 BASE_TMP = "/tmp/streamlit_dados"
-TOKENS_IDX = ["NDVI","GNDVI","NDRE","CCCI","MSAVI2","NDWI","NDMI","NBR","TWI2"]
+TOKENS_IDX = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
 
 # =========================
-# Utilidades de descoberta/IO
+# Descoberta de arquivos na nuvem
 # =========================
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base): return None
@@ -39,23 +35,8 @@ def _find_latest_save_dir(base=BASE_TMP):
     cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return cands[0]
 
-def _find_latest_indices_csv(base=BASE_TMP):
-    pats = glob.glob(os.path.join(base, "salvamento-*", "indices_espectrais_pontos_*.csv"))
-    if not pats: return None
-    pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return pats[0]
-
-def _find_latest_model(base=BASE_TMP):
-    pats = glob.glob(os.path.join(base, "melhor_modelo_*.pkl"))
-    if not pats:
-        pats = glob.glob(os.path.join(base, "*.pkl"))
-    if not pats: return None
-    pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return pats[0]
-
 def _find_points_gpkg(save_dir):
-    cands = ["pontos_produtividade.gpkg","pontos_com_previsao.gpkg","prod_requinte_colab.gpkg"]
-    for nm in cands:
+    for nm in ["pontos_produtividade.gpkg","pontos_com_previsao.gpkg","prod_requinte_colab.gpkg"]:
         p = os.path.join(save_dir, nm)
         if os.path.exists(p): return p
     for p in glob.glob(os.path.join(save_dir, "*.gpkg")):
@@ -68,8 +49,7 @@ def _find_points_gpkg(save_dir):
     return None
 
 def _find_area_gpkg(save_dir):
-    cands = ["area_amostral.gpkg","area_poligono.gpkg","area_total_poligono.gpkg","requinte_colab.gpkg"]
-    for nm in cands:
+    for nm in ["area_amostral.gpkg","area_poligono.gpkg","area_total_poligono.gpkg","requinte_colab.gpkg"]:
         p = os.path.join(save_dir, nm)
         if os.path.exists(p): return p
     for p in glob.glob(os.path.join(save_dir, "*.gpkg")):
@@ -81,6 +61,58 @@ def _find_area_gpkg(save_dir):
             pass
     return None
 
+def _find_best_model(base=BASE_TMP):
+    pats = glob.glob(os.path.join(base, "melhor_modelo_*.pkl"))
+    if not pats: pats = glob.glob(os.path.join(base, "*.pkl"))
+    if not pats: return None
+    pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return pats[0]
+
+# =========================
+# Conexão GEE (Service Account)
+# =========================
+def ensure_ee_init():
+    try:
+        _ = ee.Number(1).getInfo()
+        return
+    except Exception:
+        pass
+
+    # 1) tentar secrets
+    if "GEE_CREDENTIALS" in st.secrets:
+        try:
+            creds = dict(st.secrets["GEE_CREDENTIALS"])
+            credentials = ee.ServiceAccountCredentials(
+                email=creds["client_email"],
+                key_data=json.dumps(creds)
+            )
+            ee.Initialize(credentials)
+            return
+        except Exception as e:
+            st.warning(f"Falha ao iniciar GEE via secrets: {e}")
+
+    # 2) tentar variável de ambiente
+    key_json = os.environ.get("GEE_SA_KEY_JSON", "")
+    if key_json:
+        try:
+            creds = json.loads(key_json)
+            credentials = ee.ServiceAccountCredentials(
+                email=creds["client_email"],
+                key_data=key_json
+            )
+            ee.Initialize(credentials)
+            return
+        except Exception as e:
+            st.warning(f"Falha ao iniciar GEE via env: {e}")
+
+    st.error("❌ Credenciais do Google Earth Engine não encontradas.")
+    st.stop()
+
+ensure_ee_init()
+
+# =========================
+# Utilidades de leitura/CSV robusto (se precisar)
+# =========================
 def _sniff_delim_and_decimal(sample_bytes: bytes):
     text = sample_bytes.decode("utf-8", errors="ignore")
     try:
@@ -96,7 +128,6 @@ def _sniff_delim_and_decimal(sample_bytes: bytes):
                 break
     return delim, decimal
 
-@st.cache_data(show_spinner=False)
 def _read_csv_robusto(path: str) -> pd.DataFrame:
     with open(path, "rb") as f:
         raw = f.read()
@@ -122,238 +153,241 @@ def _read_csv_robusto(path: str) -> pd.DataFrame:
     df = df.dropna(axis=1, how="all")
     return df
 
-def _filter_features_df(df: pd.DataFrame):
-    # mantém maduro_kg + TODAS colunas de índices (min/mean/max etc.)
-    drop_cols = [c for c in ["Code","latitude","longitude","geometry"] if c in df.columns]
-    df = df.drop(columns=drop_cols, errors="ignore")
-    idx_cols = [c for c in df.columns if any(tok in c for tok in TOKENS_IDX)]
-    keep = (["maduro_kg"] if "maduro_kg" in df.columns else []) + idx_cols
-    out = df[keep].copy()
-    for c in out.columns:
-        out[c] = pd.to_numeric(out[c], errors="coerce")
-    out = out.dropna(axis=1, how="all")
-    return out
-
-def _auto_utm_epsg(geom_gdf: gpd.GeoDataFrame) -> int:
-    if not HAVE_PYPROJ: return 32722
-    centroid = geom_gdf.geometry.unary_union.centroid
-    lon = float(centroid.x); lat = float(centroid.y)
-    zone = int((lon + 180) // 6) + 1
-    return int(f"{326 if lat >= 0 else 327}{zone:02d}")
-
-def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
-    prep_poly = prep(poly_union)
-    flat_pts = np.c_[xi_grid.ravel(), yi_grid.ravel()]
-    mask = np.fromiter(
-        (prep_poly.contains(Polygon([(x,y),(x+0.001,y),(x+0.001,y+0.001),(x,y+0.001)]).centroid)
-         for x,y in flat_pts),
-        dtype=bool, count=flat_pts.shape[0]
-    )
-    return mask.reshape(xi_grid.shape)
-
 # =========================
-# Descoberta automática dos insumos
+# Carregar insumos da nuvem
 # =========================
 save_dir = _find_latest_save_dir()
-csv_path = _find_latest_indices_csv()
-model_path = _find_latest_model()
-
-if not (save_dir and csv_path and model_path):
-    st.error("❌ Não encontrei automaticamente: diretório de salvamento, CSV de índices e/ou melhor modelo.")
+if not save_dir:
+    st.error("❌ Não encontrei diretório de salvamento em /tmp/streamlit_dados.")
     st.stop()
 
 pts_gpkg = _find_points_gpkg(save_dir)
 area_gpkg = _find_area_gpkg(save_dir)
-
-st.caption(f"Origem: `{save_dir}`")
-st.caption(f"CSV de índices: `{csv_path}`")
-st.caption(f"Modelo: `{model_path}`")
+model_path = _find_best_model(BASE_TMP)
+params_path = os.path.join(save_dir, "parametros_area.json")
 
 if not pts_gpkg:
-    st.error("❌ GPKG de pontos não encontrado no salvamento.")
+    st.error("❌ GPKG de pontos não encontrado.")
     st.stop()
 if not area_gpkg:
-    st.warning("⚠️ GPKG de área não encontrado; usarei o envelope dos pontos como área de máscara.")
+    st.error("❌ GPKG de área (polígono) não encontrado.")
+    st.stop()
+if not model_path:
+    st.error("❌ Modelo salvo não encontrado (melhor_modelo_*.pkl). Execute a aba de Treinamento.")
+    st.stop()
+
+# parâmetros (densidade, produtividade, buffer, nuvens)
+params = {}
+if os.path.exists(params_path):
+    try:
+        with open(params_path, "r") as f:
+            params = json.load(f)
+    except Exception:
+        pass
+
+st.caption(f"📂 Origem: `{save_dir}`")
+st.caption(f"📍 Pontos: `{os.path.basename(pts_gpkg)}` | 🗺️ Área: `{os.path.basename(area_gpkg)}` | 🧠 Modelo: `{os.path.basename(model_path)}`")
 
 # =========================
-# Carregar dados / preparar X
+# Leitura área/pontos e ROI
 # =========================
-df_raw = _read_csv_robusto(csv_path)
-df_feat = _filter_features_df(df_raw)
-if df_feat.empty:
-    st.error("❌ CSV não contém colunas de índices válidas.")
-    st.stop()
+gdf_area = gpd.read_file(area_gpkg)
+if gdf_area.crs is None: gdf_area = gdf_area.set_crs(4326)
+else: gdf_area = gdf_area.to_crs(4326)
 
 gdf_pts = gpd.read_file(pts_gpkg)
 if gdf_pts.crs is None: gdf_pts = gdf_pts.set_crs(4326)
 else: gdf_pts = gdf_pts.to_crs(4326)
 
-# alinhar tamanho
-n = min(len(df_feat), len(gdf_pts))
-df_feat = df_feat.iloc[:n].reset_index(drop=True)
-gdf_pts  = gdf_pts.iloc[:n].reset_index(drop=True)
-
-with st.expander("Prévia dos dados de entrada (maduro_kg + índices)"):
-    st.dataframe(df_feat.head(), use_container_width=True)
+roi = geemap.gdf_to_ee(gdf_area[["geometry"]])
 
 # =========================
-# Carregar modelo e prever TODOS os pontos
+# Sidebar: parâmetros do usuário
 # =========================
-bundle = joblib.load(model_path)
-if isinstance(bundle, dict) and "model" in bundle:
-    model   = bundle.get("model")
-    features= bundle.get("features", [c for c in df_feat.columns if c != "maduro_kg"])
-    scaler  = bundle.get("scaler", None)
-else:
-    model   = bundle
-    features= [c for c in df_feat.columns if c != "maduro_kg"]
-    scaler  = None
+st.sidebar.header("Parâmetros")
+bandas = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
 
-missing = [f for f in features if f not in df_feat.columns]
-if missing:
-    st.error(f"❌ O CSV não contém todas as features esperadas pelo modelo: {missing}")
-    st.stop()
+# Datas
+c1, c2 = st.sidebar.columns(2)
+train_start = c1.date_input("Treino: início", value=pd.to_datetime(params.get("data_inicio","2023-08-01")).date())
+train_end   = c2.date_input("Treino: fim",    value=pd.to_datetime(params.get("data_fim","2024-05-31")).date())
 
-X = df_feat[features].values
-if scaler is not None:
-    try:
-        X = scaler.transform(X)
-    except Exception:
-        pass
+p1, p2 = st.sidebar.columns(2)
+pred_start = p1.date_input("Predição: início", value=pd.to_datetime(params.get("pred_inicio","2024-08-01")).date())
+pred_end   = p2.date_input("Predição: fim",    value=pd.to_datetime(params.get("pred_fim","2025-05-31")).date())
 
-y_pred = model.predict(X)
+# Nuvens / Buffer
+cloud_train = int(params.get("cloud_thr", 5))         # usar mesmo do processamento
+buffer_m    = int(params.get("buffer_m", 5))          # usar mesmo do processamento
+cloud_pred  = st.sidebar.slider("Nuvens para PREDIÇÃO (%)", 0, 60, 20, 1)
 
-# GeoDataFrame com predições (kg por planta — usado com densidade para kg/ha)
-gdf_pred = gpd.GeoDataFrame(
-    pd.DataFrame({**{c: df_feat[c].values for c in df_feat.columns if c != "geometry"},
-                  "Produtividade_Predita_kg": y_pred}),
-    geometry=gdf_pts.geometry, crs=gdf_pts.crs
-)
-
-st.success("✅ Predição concluída para todos os pontos!")
+st.sidebar.caption(f"Treinamento usa os parâmetros do processamento: nuvens **{cloud_train}%**, buffer **{buffer_m} m**.")
 
 # =========================
-# Área total e densidade (obrigatória) — só então calcular métricas
+# Funções GEE (iguais ao seu Colab, com as adaptações)
 # =========================
-# Área (para métricas e máscara do mapa)
-if area_gpkg:
-    gdf_area = gpd.read_file(area_gpkg)
-    if gdf_area.crs is None: gdf_area = gdf_area.set_crs(4326)
-    else: gdf_area = gdf_area.to_crs(4326)
-else:
-    gdf_area = gpd.GeoDataFrame(geometry=[gdf_pts.geometry.unary_union.envelope], crs=4326)
+def processar_colecao(start_date, end_date, roi, limite_nuvens):
+    col = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+           .filterBounds(roi)
+           .filterDate(ee.Date(str(start_date)), ee.Date(str(end_date)))
+           .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', limite_nuvens))
+           .map(lambda img: img.addBands([
+               img.normalizedDifference(['B8','B5']).divide(img.normalizedDifference(['B8','B4'])).rename('CCCI'),
+               img.normalizedDifference(['B8','B11']).rename('NDMI'),
+               img.normalizedDifference(['B3','B8']).rename('NDWI'),
+               img.normalizedDifference(['B8','B12']).rename('NBR'),
+               img.normalizedDifference(['B9','B8']).rename('TWI2'),
+               img.normalizedDifference(['B8','B4']).rename('NDVI'),
+               img.normalizedDifference(['B8','B5']).rename('NDRE'),
+               img.expression('(2*NIR + 1 - sqrt((2*NIR + 1)**2 - 8*(NIR - RED)))/2',
+                              {'NIR': img.select('B8'), 'RED': img.select('B4')}).rename('MSAVI2'),
+               img.normalizedDifference(['B8','B3']).rename('GNDVI')
+           ]))
+           .map(lambda img: img.set('data', img.date().format('YYYY-MM-dd'))))
 
-epsg_utm = _auto_utm_epsg(gdf_area)
-gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
-area_total_ha = float(gdf_area_utm.area.sum() / 10_000.0)
-st.caption(f"• Área total do(s) polígono(s): **{area_total_ha:.4f} ha** (EPSG:{epsg_utm})")
+    datas_unicas = col.aggregate_array('data').distinct()
+    def _unica_por_data(d):
+        d = ee.String(d)
+        imgs = col.filter(ee.Filter.eq('data', d))
+        return ee.Image(imgs.first())
+    return ee.ImageCollection(datas_unicas.map(_unica_por_data))
 
-st.markdown("### 📏 Densidade de plantas (obrigatória para calcular produtividade)")
-densidade_pes_ha = st.number_input("Densidade de plantas (pés/ha)", min_value=1, value=None, step=1, format="%d", placeholder="ex.: 4000")
+def extrair_estatisticas_ponto_imagem(imagem, feature_ponto, nomes_indices, buffer_m):
+    buffer = feature_ponto.geometry().buffer(buffer_m)
+    out = ee.Dictionary({})
+    for indice in nomes_indices:
+        banda = imagem.select(indice)
+        red = banda.reduceRegion(
+            reducer=ee.Reducer.min().combine(
+                reducer2=ee.Reducer.mean(), sharedInputs=True
+            ).combine(
+                reducer2=ee.Reducer.max(), sharedInputs=True
+            ),
+            geometry=buffer, scale=10, maxPixels=1e8
+        )
+        out = out.set(f"{indice}_min",  red.get(indice + "_min"))
+        out = out.set(f"{indice}_mean", red.get(indice + "_mean"))
+        out = out.set(f"{indice}_max",  red.get(indice + "_max"))
+    return ee.Feature(feature_ponto.geometry(), out)
 
-if not densidade_pes_ha:
-    st.info("Informe a **densidade de plantas (pés/ha)** para ver as métricas de produtividade.")
-else:
-    # Conversão com densidade:
-    # média(kg por planta) -> kg/ha = média * densidade; sacas/ha = kg/ha / 60
-    media_kg_por_planta = float(np.nanmean(gdf_pred["Produtividade_Predita_kg"]))
-    prod_kg_ha  = media_kg_por_planta * float(densidade_pes_ha)
-    prod_sc_ha  = prod_kg_ha / 60.0
-    total_kg    = prod_kg_ha * area_total_ha
-    total_sacas = prod_sc_ha * area_total_ha
+def processar_ponto(ponto, colecao_imagens, lista_indices, buffer_m):
+    def por_imagem(img):
+        return extrair_estatisticas_ponto_imagem(img, ponto, lista_indices, buffer_m)
+    fc = colecao_imagens.map(por_imagem)
 
-    st.markdown("### 📈 Produtividade prevista (ajustada por densidade)")
-    c1, c2 = st.columns(2)
-    c1.metric("Produtividade média prevista (kg/ha)", f"{prod_kg_ha:.2f}")
-    c2.metric("Produtividade média prevista (sacas/ha)", f"{prod_sc_ha:.2f}")
+    # Combina (último valor de cada banda/estatística na janela — igual ao seu Colab adaptado)
+    def _combinar(feat, acc):
+        return ee.Dictionary(acc).combine(ee.Feature(feat).toDictionary(), overwrite=True)
+    props = ee.Dictionary(fc.iterate(_combinar, ee.Dictionary({})))
+    return ee.Feature(ponto.geometry(), props)
 
-    c3, c4 = st.columns(2)
-    c3.metric("Produção total estimada (kg)", f"{total_kg:.0f}")
-    c4.metric("Produção total estimada (sacas)", f"{total_sacas:.2f}")
-
-    # Salvar CSV/GPKG + métricas
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    csv_out  = os.path.join(save_dir, f"produtividade_predita_pontos_{ts}.csv")
-    gpkg_out = os.path.join(save_dir, f"produtividade_predita_pontos_{ts}.gpkg")
-    met_out  = os.path.join(save_dir, f"produtividade_media_ajustada_{ts}.csv")
-
-    # (mantém kg por ponto; NÃO cria sc/ha por ponto, pois a densidade é global)
-    gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(csv_out, index=False)
-    gdf_pred.to_file(gpkg_out, driver="GPKG")
-
-    df_metrics = pd.DataFrame([{
-        "densidade_pes_ha": int(densidade_pes_ha),
-        "area_total_ha": area_total_ha,
-        "media_kg_por_planta": media_kg_por_planta,
-        "prod_kg_ha": prod_kg_ha,
-        "prod_sacas_ha": prod_sc_ha,
-        "total_kg": total_kg,
-        "total_sacas": total_sacas,
-    }])
-    df_metrics.to_csv(met_out, index=False)
-
-    st.caption(f"CSV (predições por ponto): `{csv_out}`")
-    st.caption(f"GPKG (predições por ponto): `{gpkg_out}`")
-    st.caption(f"CSV (métricas): `{met_out}`")
-    st.download_button("📥 Baixar CSV de predições", data=open(csv_out, "rb").read(),
-                       file_name=os.path.basename(csv_out), mime="text/csv")
-    st.download_button("📥 Baixar CSV de métricas", data=open(met_out, "rb").read(),
-                       file_name=os.path.basename(met_out), mime="text/csv")
+def extrair_dados_min_mean_max(colecao, gdf_pontos, nomes_indices, buffer_m):
+    pts_ee = geemap.gdf_to_ee(gdf_pontos)
+    pts_proc = pts_ee.map(lambda pt: processar_ponto(pt, colecao, nomes_indices, buffer_m))
+    gdf_out = geemap.ee_to_gdf(pts_proc)
+    # mantém colunas originais (exceto geometry) quando disponíveis
+    for col in gdf_pontos.columns:
+        if col not in gdf_out.columns and col != "geometry":
+            gdf_out[col] = gdf_pontos[col].values
+    return gdf_out
 
 # =========================
-# Mapa de variabilidade (interpolação spline/RBF) — independe da densidade
+# Botão de execução
 # =========================
-st.markdown("---")
-st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista (kg por planta)")
+if st.button("▶️ Reprocessar índices no GEE e prever"):
+    with st.spinner("Processando… isso pode levar alguns minutos."):
+        # 1) Coleções
+        col_train = processar_colecao(train_start, train_end, roi, cloud_train)
+        col_pred  = processar_colecao(pred_start,  pred_end,  roi, cloud_pred)
 
-gdf_pred_utm = gdf_pred.to_crs(epsg=epsg_utm)
+        # 2) Extrair estatísticas (min/mean/max) por ponto
+        gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
+        gdf_pred  = extrair_dados_min_mean_max(col_pred,  gdf_pts, TOKENS_IDX, buffer_m)
 
-# Grade regular (5 m)
-xmin, ymin, xmax, ymax = gdf_area_utm.total_bounds
-res = 5.0  # metros
-xi = np.arange(xmin, xmax, res)
-yi = np.arange(ymin, ymax, res)
-xi_grid, yi_grid = np.meshgrid(xi, yi)
+        # 3) Preparar X/y de TREINO (iguais ao seu Colab)
+        feats = [f"{b}_{stat}" for b in TOKENS_IDX for stat in ["min","mean","max"]]
+        for df_ in (gdf_train, gdf_pred):
+            for c in feats:
+                if c in df_.columns:
+                    df_[c] = pd.to_numeric(df_[c], errors="coerce")
 
-# Dados para spline (x, y, z)
-xy = np.array([(p.x, p.y) for p in gdf_pred_utm.geometry])
-z  = gdf_pred_utm["Produtividade_Predita_kg"].astype(float).values
+        if "maduro_kg" not in gdf_train.columns:
+            st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento.")
+            st.stop()
 
-# Interpolação RBF thin-plate spline
-rbf = Rbf(xy[:,0], xy[:,1], z, function="thin_plate")
-zi = rbf(xi_grid, yi_grid)
+        X = gdf_train[feats].copy()
+        y = pd.to_numeric(gdf_train["maduro_kg"], errors="coerce")
+        X_pred = gdf_pred[feats].copy()
 
-# Máscara por polígono
-poly_union = gdf_area_utm.geometry.unary_union
-mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
-zi_masked = np.full_like(zi, np.nan, dtype=float)
-zi_masked[mask] = zi[mask]
+        # 4) Carrega o MELHOR MODELO salvo e ajusta com X,y (como no Colab)
+        modelo = joblib.load(model_path)
+        # se tiver feature_names_in_, ótimo; caso não, seguimos mesmo assim
+        try:
+            _ = getattr(modelo, "feature_names_in_", None)
+        except Exception:
+            pass
 
-# Plot
-fig, ax = plt.subplots(figsize=(10, 8))
-img = ax.imshow(
-    zi_masked,
-    extent=(xmin, xmax, ymin, ymax),
-    origin="lower",
-    cmap="YlGn",
-    interpolation="nearest"
-)
-gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
-gdf_pred_utm.plot(ax=ax, color="red", markersize=16)
+        modelo.fit(X.values, y.values)
 
-cbar = plt.colorbar(img, ax=ax, shrink=0.75)
-cbar.set_label("Produtividade Predita (kg por planta)")
+        # 5) Predição (como no Colab)
+        yhat = modelo.predict(X_pred.values)
+        gdf_pred["produtividade_kg"] = yhat
+        # Conversão EXATA do seu Colab:
+        gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (1/60) * (1/0.0016)
 
-ax.set_title(f"Variabilidade Espacial — Spline (RBF) | EPSG:{epsg_utm}")
-ax.set_xlabel("UTM Easting (m)")
-ax.set_ylabel("UTM Northing (m)")
+        # 6) Adaptação 6 — parâmetros da propriedade (densidade/área/produtividade média)
+        #    (exibição e registro — cálculo de área por ponto conforme exemplo do seu Colab)
+        densidade = params.get("densidade_pes_ha", None)
+        produtividade_media = params.get("produtividade_media_sacas_ha", None)
 
-plt.tight_layout()
-st.pyplot(fig, use_container_width=True)
+        # área do(s) polígono(s) em ha (usa CRS métrico adequado)
+        try:
+            from pyproj import CRS
+            epsg_guess = 32722
+            centroid = gdf_area.geometry.unary_union.centroid
+            zone = int((float(centroid.x) + 180)//6) + 1
+            epsg_guess = int(f"327{zone:02d}") if float(centroid.y) < 0 else int(f"326{zone:02d}")
+            gdf_area_m = gdf_area.to_crs(epsg=epsg_guess)
+            area_total_ha = float(gdf_area_m.area.sum()/10_000.0)
+        except Exception:
+            area_total_ha = np.nan
 
-# Download da figura
-buf = io.BytesIO()
-fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
-st.download_button("🖼️ Baixar mapa (PNG)", data=buf.getvalue(),
-                   file_name=f"mapa_variabilidade_{datetime.now().strftime('%Y%m%d-%H%M%S')}.png", mime="image/png")
+        total_pontos_amostrais = len(gdf_pts)
+        pes_por_amostra = 5
+        area_por_ponto_ha = None
+        if densidade:
+            area_por_ponto_ha = (1/float(densidade)) * pes_por_amostra
 
+        # 7) Salvar resultados
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_csv = os.path.join(save_dir, f"predicao_sem_datas_{ts}.csv")
+        gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(out_csv, index=False)
+
+        # metadados úteis (datas, nuvens, buffer e parâmetros)
+        meta = {
+            "treino_inicio": str(train_start),
+            "treino_fim": str(train_end),
+            "pred_inicio": str(pred_start),
+            "pred_fim": str(pred_end),
+            "nuvens_treino_%": cloud_train,
+            "nuvens_pred_%": cloud_pred,
+            "buffer_m": buffer_m,
+            "area_total_ha": area_total_ha,
+            "densidade_pes_ha": densidade,
+            "produtividade_media_sacas_ha": produtividade_media,
+            "total_pontos_amostrais": total_pontos_amostrais,
+            "area_por_ponto_ha": area_por_ponto_ha,
+            "modelo_usado": os.path.basename(model_path),
+            "bandas": TOKENS_IDX,
+        }
+        out_meta = os.path.join(save_dir, f"predicao_params_{ts}.json")
+        with open(out_meta, "w") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+
+    st.success("✅ Predição concluída e arquivos salvos!")
+    st.caption(f"CSV: `{out_csv}`")
+    st.caption(f"JSON (parâmetros): `{out_meta}`")
+    st.download_button("📥 Baixar CSV de predição", data=open(out_csv,"rb").read(),
+                       file_name=os.path.basename(out_csv), mime="text/csv")
+    st.download_button("📥 Baixar JSON de parâmetros", data=open(out_meta,"rb").read(),
+                       file_name=os.path.basename(out_meta), mime="application/json")
