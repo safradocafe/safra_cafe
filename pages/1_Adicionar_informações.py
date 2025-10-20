@@ -14,11 +14,39 @@ from streamlit_folium import st_folium
 import zipfile
 from io import BytesIO
 
-# ---- Estilo (sem set_page_config aqui) ----
+# ---- Estilo / CSS ----
 st.markdown("""
     <style>
     .block-container { padding-top: 0rem !important; padding-bottom: 1rem; }
     header, footer {visibility: hidden;}
+
+    /* File uploader em PT-BR e mais compacto */
+    div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
+        border: 1px dashed #999 !important;
+        background: #fafafa !important;
+        padding: 8px 10px !important;
+        min-height: 70px !important;
+    }
+    /* Esconde textos padrão em inglês */
+    div[data-testid="stFileUploaderDropzone"] small, 
+    div[data-testid="stFileUploaderDropzone"] span {
+        display: none !important;
+    }
+    /* Insere textos em português */
+    div[data-testid="stFileUploaderDropzone"]::after {
+        content: "Arraste e solte o arquivo aqui ou clique para selecionar";
+        display: block;
+        color: #444;
+        font-size: 12px;
+        text-align: center;
+        padding-top: 6px;
+    }
+
+    /* Subtítulos compactos */
+    .sub-mini { font-size: 12px; font-weight: 600; margin: 6px 0 4px 0; }
+    .controls-title { font-size: 13px; font-weight: 700; margin: 12px 0 8px 0; }
+    .controls-group label { font-size: 12px !important; }
+    .controls-group .stButton>button { padding: 4px 10px; font-size: 12px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -26,7 +54,7 @@ st.markdown("""
 for key in [
     'gdf_poligono', 'gdf_pontos', 'unidade_selecionada',
     'densidade_plantas', 'produtividade_media', 'mapa_data', 'modo_insercao',
-    'drawing_mode' 
+    'drawing_mode', 'map_fit_bounds'
 ]:
     if key not in st.session_state:
         st.session_state[key] = 'kg' if key == 'unidade_selecionada' else None
@@ -56,8 +84,21 @@ def get_utm_epsg(lon, lat):
     utm_zone = int((lon + 180) / 6) + 1
     return 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
 
+def _fit_bounds_from_gdf(gdf):
+    b = gdf.total_bounds  # [minx,miny,maxx,maxy]
+    return [[b[1], b[0]], [b[3], b[2]]]
+
 def create_map():
-    m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
+    # Se houver área amostral, o mapa será ajustado ao polígono. Caso contrário, visão do Brasil.
+    if st.session_state.gdf_poligono is not None:
+        m = folium.Map(location=[0,0], zoom_start=2, tiles="OpenStreetMap")
+        # Enquadra na área amostral
+        bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
+        st.session_state.map_fit_bounds = bounds
+        m.fit_bounds(bounds, padding=(20, 20))
+    else:
+        m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
+
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri', name='Satélite', overlay=False, control=True
@@ -73,13 +114,18 @@ def create_map():
     )
     draw.add_to(m)
 
-    # MOSTRAR ÁREA AMOSTRAL (voltou)
+    # MOSTRAR ÁREA AMOSTRAL
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
-            name="Área Amostral",
+            name="Área amostral",
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
         ).add_to(m)
+        # reforça enquadramento a cada render
+        try:
+            m.fit_bounds(st.session_state.map_fit_bounds, padding=(20, 20))
+        except Exception:
+            pass
 
     # MOSTRAR PONTOS
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
@@ -112,7 +158,6 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
 
         # Normaliza CRS para WGS84 (EPSG:4326)
         if gdf.crs is None:
-            # Se não houver CRS, vamos assumir WGS84 (se sua fonte SEMPRE estiver em WGS84)
             gdf = gdf.set_crs(epsg=4326)
         elif gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
@@ -123,8 +168,9 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
                 st.error("❌ O arquivo da área amostral deve conter polígonos.")
                 return None
 
-            # Guarda só a geometria (limpo)
             st.session_state.gdf_poligono = gdf[['geometry']]
+            # Armazena bounds para manter enquadramento estável
+            st.session_state.map_fit_bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
             st.success("✅ Área amostral carregada com sucesso!")
             return gdf
 
@@ -134,7 +180,6 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
                 st.error("❌ O arquivo de pontos deve conter geometrias do tipo Ponto.")
                 return None
 
-            # Validação estrita de colunas
             required_cols = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
             faltando = [c for c in required_cols if c not in gdf.columns]
             if faltando:
@@ -142,8 +187,6 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
                 st.info("Necessário: Code, maduro_kg, latitude, longitude e geometry (pontos).")
                 return None
 
-            # Garante tipos corretos
-            # (se vierem como string, converte; se não der, erro claro)
             try:
                 gdf['maduro_kg'] = pd.to_numeric(gdf['maduro_kg'])
                 gdf['latitude']  = pd.to_numeric(gdf['latitude'])
@@ -152,19 +195,17 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
                 st.error("❌ As colunas maduro_kg, latitude e longitude precisam ser numéricas.")
                 return None
 
-            # Recalcula latitude/longitude a partir da geometria para evitar inconsistência
+            # Recalcula latitude/longitude pela geometria
             gdf['latitude']  = gdf.geometry.y
             gdf['longitude'] = gdf.geometry.x
 
-            # Checagem final: valores plausíveis
+            # Checagem final
             if not ((gdf['latitude'].between(-90, 90)) & (gdf['longitude'].between(-180, 180))).all():
                 st.error("❌ Latitude/Longitude fora do intervalo esperado (-90..90 / -180..180).")
                 return None
 
-            # Mantém demais campos como estão; não cria colunas novas (requisito de “não relaxar”)
             st.session_state.gdf_pontos = gdf
             st.success(f"✅ {len(gdf)} pontos carregados com sucesso!")
-            st.info(f"Colunas: {', '.join(gdf.columns)}")
             return gdf
 
     except Exception as e:
@@ -174,7 +215,7 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
 
 def gerar_pontos_automaticos():
     if st.session_state.gdf_poligono is None:
-        st.warning("Defina a área amostral primeiro!")
+        st.warning("Defina a área amostral")
         return
     centroid = st.session_state.gdf_poligono.geometry.centroid.iloc[0]
     epsg = get_utm_epsg(centroid.x, centroid.y)
@@ -312,115 +353,30 @@ def inserir_produtividade():
             st.success("Dados de produtividade atualizados.")
             st.rerun()
 
-# =======================
-# ---- LAYOUT PRINCIPAL (fora de funções!) ----
-# =======================
-
-col1, col2 = st.columns([1, 3])
-
-with col1:
-    st.markdown("<h4>Controles</h4>", unsafe_allow_html=True)
-
-    uploaded_area = st.file_uploader("1. Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
-    if uploaded_area:
-        processar_arquivo_carregado(uploaded_area, tipo='amostral')
-
-    uploaded_pontos = st.file_uploader("2. Pontos de Produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
-    if uploaded_pontos:
-        processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
-
-    if st.button("▶️ Área amostral"):
-        st.session_state.drawing_mode = 'amostral'
-        st.session_state.modo_insercao = None
-        st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
-        time.sleep(0.3)
-        st.rerun()
-
-    st.subheader("Dados da área amostral")
-    st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=float(st.session_state.densidade_plantas or 0))
-    st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=float(st.session_state.produtividade_media or 0))
-
-    if st.button("🔢 Gerar pontos automáticos (2/ha)"):
-        if st.session_state.gdf_poligono is not None:
-            gerar_pontos_automaticos()
-        else:
-            st.warning("Defina a área amostral primeiro.")
-
-    if st.button("✏️ Inserir pontos manualmente"):
-        st.session_state.modo_insercao = 'manual'
-        st.rerun()
-
-    if st.button("📝 Inserir produtividade"):
-        inserir_produtividade()
-
-    if st.button("💾 Salvar pontos"):
-        salvar_pontos()
-
-    if st.button("💾 Exportar dados"):
-        exportar_dados()
-
-    if st.button("🗑️ Limpar área"):
-        st.session_state.gdf_poligono = None        
-        st.session_state.gdf_pontos = None
-        st.success("Áreas limpas!")
-
-    st.subheader("Produtividade")
-    st.session_state.unidade_selecionada = st.selectbox("Unidade:", ['kg', 'latas', 'litros'],
-                                                        index=['kg','latas','litros'].index(st.session_state.unidade_selecionada or 'kg'))
-
-with col2:
-    st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
-    mapa = create_map()
-    mapa_data = st_folium(mapa, width=700, height=500, key='mapa_principal')
-
-    # Se estiver no modo manual, mostra o formulário para inserir ponto
-    if st.session_state.get('modo_insercao') == 'manual':
-        inserir_ponto_manual()
-
-    # Captura desenho no mapa
-    if mapa_data and mapa_data.get('last_active_drawing'):
-        geometry = mapa_data['last_active_drawing']['geometry']
-        gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-
-        if st.session_state.get('drawing_mode') == 'amostral':
-            st.session_state.gdf_poligono = gdf
-            st.session_state.drawing_mode = None
-            st.success("Área amostral definida!")
-            time.sleep(0.3)
-            st.rerun()
-
-# ---- Salvar no /tmp do container (opcional) ----
 def salvar_no_streamlit_cloud():
-    # validações mínimas
     if st.session_state.get("gdf_poligono") is None:
         st.warning("⚠️ Defina a área amostral antes de salvar!")
         return
-
     if st.session_state.get("densidade_plantas") is None or \
        st.session_state.get("produtividade_media") is None:
         st.warning("⚠️ Parâmetros de densidade e produtividade não definidos!")
         return
 
-    # diretório temporário no container (volátil: zera quando reinicia)
     base_dir = "/tmp/streamlit_dados"
     os.makedirs(base_dir, exist_ok=True)
 
-    # usa subpasta por salvamento para não sobrescrever
     carimbo = time.strftime("%Y%m%d-%H%M%S")
     save_dir = os.path.join(base_dir, f"salvamento-{carimbo}")
     os.makedirs(save_dir, exist_ok=True)
 
-    # salva área amostral
     area_path = os.path.join(save_dir, "area_amostral.gpkg")
     st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
 
-    # salva pontos se houver
     pontos_path = None
     if st.session_state.get("gdf_pontos") is not None and not st.session_state.gdf_pontos.empty:
         pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
         st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
 
-    # salva parâmetros
     params_path = os.path.join(save_dir, "parametros_area.json")
     parametros = {
         "densidade_pes_ha": st.session_state.densidade_plantas,
@@ -429,15 +385,100 @@ def salvar_no_streamlit_cloud():
     with open(params_path, "w") as f:
         json.dump(parametros, f)
 
-    # guarda o caminho para uso nas próximas abas, se quiser
     st.session_state["tmp_save_dir"] = save_dir
     st.session_state["tmp_area_path"] = area_path
     if pontos_path:
         st.session_state["tmp_pontos_path"] = pontos_path
     st.session_state["tmp_params_path"] = params_path
 
-    st.success("✅ Arquivos salvos temporariamente no container (/tmp).")
-    st.info(f"Diretório desta execução: {save_dir}")
+    # Salvar silenciosamente (sem exibir links/caminhos)
+    st.success("✅ Dados salvos na nuvem para uso nas próximas etapas.")
 
-if st.button("☁️ Salvar dados na nuvem"):
-    salvar_no_streamlit_cloud()
+# =======================
+# ---- LAYOUT EM UMA COLUNA: MAPA primeiro, CONTROLES depois
+# =======================
+
+# Mapa de visualização (estável na área amostral)
+st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
+mapa = create_map()
+mapa_data = st_folium(mapa, width=900, height=520, key='mapa_principal')
+
+# Captura desenho no mapa
+if mapa_data and mapa_data.get('last_active_drawing'):
+    geometry = mapa_data['last_active_drawing']['geometry']
+    gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+    if st.session_state.get('drawing_mode') == 'amostral':
+        st.session_state.gdf_poligono = gdf
+        st.session_state.map_fit_bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
+        st.session_state.drawing_mode = None
+        st.success("Área amostral definida!")
+        time.sleep(0.3)
+        st.rerun()
+
+# Controles (abaixo do mapa), compactos
+st.markdown('<div class="controls-title">Controles</div>', unsafe_allow_html=True)
+with st.container():
+    st.markdown('<div class="controls-group">', unsafe_allow_html=True)
+
+    uploaded_area = st.file_uploader("Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
+    if uploaded_area:
+        processar_arquivo_carregado(uploaded_area, tipo='amostral')
+
+    uploaded_pontos = st.file_uploader("Pontos de produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
+    if uploaded_pontos:
+        processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
+
+    cbtn1, cbtn2, cbtn3, cbtn4 = st.columns([1,1,1,1])
+    with cbtn1:
+        if st.button("▶️ Área amostral"):
+            st.session_state.drawing_mode = 'amostral'
+            st.session_state.modo_insercao = None
+            st.success("Modo desenho ativado: Área Amostral - Desenhe no mapa")
+            time.sleep(0.3)
+            st.rerun()
+    with cbtn2:
+        if st.button("🔢 Gerar pontos automáticos (2/ha)"):
+            if st.session_state.gdf_poligono is not None:
+                gerar_pontos_automaticos()
+            else:
+                st.warning("Defina a área amostral primeiro.")
+    with cbtn3:
+        if st.button("✏️ Inserir pontos manualmente"):
+            st.session_state.modo_insercao = 'manual'
+            st.rerun()
+    with cbtn4:
+        if st.button("📝 Inserir produtividade"):
+            inserir_produtividade()
+
+    st.markdown('<div class="sub-mini">Dados da área amostral</div>', unsafe_allow_html=True)
+    st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha):", value=float(st.session_state.densidade_plantas or 0))
+    st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha):", value=float(st.session_state.produtividade_media or 0))
+
+    cact1, cact2, cact3 = st.columns([1,1,1])
+    with cact1:
+        if st.button("💾 Salvar pontos"):
+            salvar_pontos()
+    with cact2:
+        if st.button("💾 Exportar dados"):
+            exportar_dados()
+    with cact3:
+        if st.button("☁️ Salvar dados na nuvem"):
+            salvar_no_streamlit_cloud()
+
+    if st.session_state.get('modo_insercao') == 'manual':
+        inserir_ponto_manual()
+
+    st.markdown('<div class="sub-mini">Produtividade</div>', unsafe_allow_html=True)
+    st.session_state.unidade_selecionada = st.selectbox(
+        "Unidade:", ['kg', 'latas', 'litros'],
+        index=['kg','latas','litros'].index(st.session_state.unidade_selecionada or 'kg')
+    )
+
+    if st.button("🗑️ Limpar área"):
+        st.session_state.gdf_poligono = None        
+        st.session_state.gdf_pontos = None
+        st.session_state.map_fit_bounds = None
+        st.success("Áreas limpas!")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
