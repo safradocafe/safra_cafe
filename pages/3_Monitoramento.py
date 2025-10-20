@@ -31,7 +31,7 @@ header, footer {visibility:hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("### 📡 Monitoramento por índices espectrais (Sentinel-2)")
+st.markdown("### 📡 Monitoramento por índices espectrais")
 st.markdown("""
 <div class="chips">
   <div class="chip"><b>NDVI</b>vigor vegetativo</div>
@@ -137,7 +137,7 @@ def sidebar_palette_legend(palette, vmin=-1.0, vmax=1.0, title="Legenda (índice
     st.sidebar.markdown(html, unsafe_allow_html=True)
 
 # -------------------------
-# Sidebar – controles (chaves únicas)
+# Sidebar – controles
 # -------------------------
 with st.sidebar:
     st.subheader("Configurações")
@@ -160,11 +160,12 @@ with st.sidebar:
         key="indices_sel_ms"
     )
 
+    # Mantém um único seletor de paleta na sidebar (vale para mapa e legenda)
     palette_name = st.selectbox("Paleta (mapa e legenda)", list(PALETTES.keys()), index=0, key="palette_sel")
     cloud_thr    = st.slider("Nuvem máxima (%)", 0, 60, 10, 1, key="cloud_thr")
     btn          = st.button("▶️ Processar", key="process_btn")
 
-    # Legenda dinâmica da sidebar - acompanha a paleta selecionada
+    # Legenda dinâmica da sidebar
     sidebar_palette_legend(PALETTES[st.session_state["palette_sel"]], vmin=-1.0, vmax=1.0,
                            title="Legenda (índices -1 a 1)")
 
@@ -278,7 +279,6 @@ def get_dates_and_ts(ee_geom, start_d, end_d, indices, cloud):
     return dates, ts_df
 
 def get_best_image_for_date(ee_geom, date_str, cloud):
-    """Retorna a melhor imagem do dia (menor nuvem), já CLIPADA e com TODAS as bandas de índices adicionadas."""
     d0 = ee.Date(date_str)
     d1 = d0.advance(1, "day")
     daycol = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -289,7 +289,6 @@ def get_best_image_for_date(ee_geom, date_str, cloud):
     img = ee.Image(daycol.first())
     img = ee.Image(ee.Algorithms.If(img, img, ee.Image(daycol.median())))
     img = ee.Image(img).clip(ee_poly)
-    # 🔧 ADICIONA TODAS AS BANDAS DE ÍNDICES (evita "Band pattern 'NDVI' did not match any bands")
     img = add_indices(img, ALL_INDICES)
     return img
 
@@ -355,24 +354,18 @@ dates = st.session_state.get("mon_dates", [])
 ts_df = st.session_state.get("mon_ts", pd.DataFrame())
 
 if dates:
-    colA, colB, colC = st.columns([2, 2, 2])
-
+    # ✅ Somente os dois controles pedidos, lado a lado e compactos
+    colA, colB = st.columns([3, 2])
     with colA:
         idx_for_map = st.radio(
             "Camada do mapa",
             options=["RGB (B4/B3/B2)"] + st.session_state["indices_sel_ms"],
             index=0,
+            horizontal=True,
             key="layer_choice"
         )
     with colB:
         date_choice = st.select_slider("Data (cena única)", options=dates, value=dates[0], key="date_choice")
-    with colC:
-        palette_name_view = st.selectbox(
-            "Paleta (mapa)",
-            list(PALETTES.keys()),
-            index=list(PALETTES.keys()).index(st.session_state["palette_sel"]),
-            key="palette_sel_view"
-        )
 
     # Imagem do dia (com TODAS as bandas de índices)
     img_date = get_best_image_for_date(ee_poly.geometry(), date_choice, st.session_state["cloud_thr"])
@@ -391,6 +384,9 @@ if dates:
         style_function=lambda x: {"color":"#1976d2","weight":2,"fillColor":"#1976d2","fillOpacity":0.08}
     ).add_to(m)
 
+    # paleta única (sidebar) vale para mapa e legenda
+    pal = PALETTES[st.session_state["palette_sel"]]
+
     # camada escolhida
     if idx_for_map == "RGB (B4/B3/B2)":
         rgb_url = ee_tile_url(img_date, {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
@@ -401,8 +397,6 @@ if dates:
         add_linear_legend(m, "RGB (B4/B3/B2)", ["#000000", "#FFFFFF"], 0, 3000, date_str=date_choice)
     else:
         vis_range = INDEX_RANGES[idx_for_map]
-        pal = PALETTES[st.session_state["palette_sel_view"]]
-        # agora a imagem tem a banda do índice:
         idx_url = ee_tile_url(img_date.select(idx_for_map), {**vis_range, "palette": pal})
         folium.raster_layers.TileLayer(
             tiles=idx_url, name=idx_for_map, attr="Google Earth Engine",
@@ -412,8 +406,8 @@ if dates:
 
     folium.LayerControl(collapsed=False).add_to(m)
 
-    # 🔑 força re-render ao mudar índice, data ou paleta
-    map_key = f"map_{idx_for_map}_{date_choice}_{st.session_state['palette_sel_view']}"
+    # chave única sem seletor de paleta na área principal
+    map_key = f"map_{idx_for_map}_{date_choice}_{st.session_state['palette_sel']}"
     st_folium(m, width=1000, height=620, key=map_key)
 
     # Série temporal
