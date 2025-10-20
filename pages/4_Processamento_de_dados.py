@@ -1,4 +1,3 @@
-# 4_Previsão_da_safra.py
 import os, glob, json
 from datetime import datetime, date
 
@@ -79,12 +78,11 @@ with st.sidebar:
     start = st.date_input("Início", value=date(2024,1,1))
     end   = st.date_input("Fim", value=date.today())
     cloud_thr = st.slider("Nuvem máxima (%)", 0, 80, 15, 1)
-    buffer_m  = st.slider("Raio do buffer (m)", 1, 30, 5, 1)
-    # REMOVIDO: Máximo de datas a processar
+    buffer_m  = st.slider("Raio do buffer (m)", 1, 30, 5, 1)   
     indices_sel = st.multiselect(
         "Índices espectrais",
         ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"],
-        default=["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]  # TODOS selecionados por padrão
+        default=["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"] 
     )
     btn = st.button("▶️ Executar processamento")
 
@@ -93,9 +91,7 @@ if gdf_poly is None or gdf_pts is None:
     st.warning("⚠️ Não encontrei os arquivos do passo 1 em `/tmp/streamlit_dados`. Volte em **Adicionar informações** e salve novamente.")
     st.stop()
 
-st.caption(f"Origem dos dados: `{latest_dir}`")
 st.write(f"**Polígono**: {len(gdf_poly)} geom | **Pontos**: {len(gdf_pts)} | Ex.:")
-# 👉 Evita ArrowTypeError: não exibir 'geometry' no dataframe
 sample_cols = [c for c in gdf_pts.columns if c != "geometry"]
 st.dataframe(gdf_pts[sample_cols].head(), use_container_width=True)
 
