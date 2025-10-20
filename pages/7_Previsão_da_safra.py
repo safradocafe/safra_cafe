@@ -23,9 +23,6 @@ try:
 except Exception:
     HAVE_PYPROJ = False
 
-# =========================
-# Página / estilo
-# =========================
 st.set_page_config(layout="wide")
 st.markdown("## ☕ Saiba a sua próxima safra")
 st.caption(
@@ -36,9 +33,6 @@ st.caption(
 BASE_TMP = "/tmp/streamlit_dados"
 TOKENS_IDX = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
 
-# =========================
-# Descoberta de arquivos
-# =========================
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base): return None
     cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
@@ -79,9 +73,6 @@ def _find_best_model(base=BASE_TMP):
     pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return pats[0]
 
-# =========================
-# GEE init
-# =========================
 def ensure_ee_init():
     try:
         _ = ee.Number(1).getInfo()
@@ -111,9 +102,6 @@ def ensure_ee_init():
 
 ensure_ee_init()
 
-# =========================
-# CSV robusto (se precisar)
-# =========================
 def _sniff_delim_and_decimal(sample_bytes: bytes):
     text = sample_bytes.decode("utf-8", errors="ignore")
     try:
@@ -154,9 +142,6 @@ def _read_csv_robusto(path: str) -> pd.DataFrame:
     df = df.dropna(axis=1, how="all")
     return df
 
-# =========================
-# Área, pontos, modelo
-# =========================
 save_dir = _find_latest_save_dir()
 if not save_dir:
     st.error("❌ Não encontrei diretório de salvamento em /tmp/streamlit_dados."); st.stop()
@@ -185,9 +170,6 @@ gdf_pts = gdf_pts.set_crs(4326) if gdf_pts.crs is None else gdf_pts.to_crs(4326)
 
 roi = geemap.gdf_to_ee(gdf_area[["geometry"]])
 
-# =========================
-# Sidebar parâmetros
-# =========================
 st.sidebar.header("Parâmetros")
 bandas = TOKENS_IDX[:]
 
@@ -204,9 +186,6 @@ buffer_m    = int(params.get("buffer_m", 5))
 cloud_pred  = st.sidebar.slider("Nuvens para PREDIÇÃO (%)", 0, 60, 20, 1)
 st.sidebar.caption(f"Treinamento usa os parâmetros do processamento: nuvens **{cloud_train}%**, buffer **{buffer_m} m**.")
 
-# =========================
-# Funções GEE
-# =========================
 def processar_colecao(start_date, end_date, roi, limite_nuvens):
     col = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
            .filterBounds(roi)
@@ -269,9 +248,6 @@ def extrair_dados_min_mean_max(colecao, gdf_pontos, nomes_indices, buffer_m):
             gdf_out[col] = gdf_pontos[col].values
     return gdf_out
 
-# =========================
-# Utilitários de modelo
-# =========================
 def _load_model_bundle(path):
     obj = joblib.load(path)
     if isinstance(obj, dict):
@@ -341,20 +317,15 @@ def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
     )
     return mask.reshape(xi_grid.shape)
 
-# =========================
-# Executar
-# =========================
-if st.button("▶️ Processar dados da próxima safra"):
+if st.button("▶️ Processar dados"):
     with st.spinner("Processando…"):
-        # 1) Coleções
+        
         col_train = processar_colecao(train_start, train_end, roi, cloud_train)
         col_pred  = processar_colecao(pred_start,  pred_end,  roi, cloud_pred)
 
-        # 2) Extrair estatísticas por ponto
-        gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
+               gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
         gdf_pred  = extrair_dados_min_mean_max(col_pred,  gdf_pts, TOKENS_IDX, buffer_m)
-
-        # 3) Preparar features (min/mean/max)
+      
         feats_all = [f"{b}_{stat}" for b in TOKENS_IDX for stat in ["min","mean","max"]]
         for df_ in (gdf_train, gdf_pred):
             for c in feats_all:
@@ -363,30 +334,22 @@ if st.button("▶️ Processar dados da próxima safra"):
 
         if "maduro_kg" not in gdf_train.columns:
             st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento."); st.stop()
-
-        # 4) Carregar modelo salvo
+       
         modelo, feats_bundle, scaler = _load_model_bundle(model_path)
         if modelo is None or not hasattr(modelo, "fit"):
             st.error("❌ Arquivo de modelo não contém um estimador válido."); st.stop()
-
-        # 5) Alinhamento de features
+        
         feats_expected = _expected_features_from(modelo, feats_bundle, feats_all)
         X_train_df, used_feats, _, _ = _smart_align(gdf_train, feats_expected)
         X_pred_df,  _,          _, _ = _smart_align(gdf_pred,  used_feats)
         if X_train_df.empty or X_pred_df.empty:
             st.error("❌ Nenhuma feature disponível para o modelo após o alinhamento."); st.stop()
-
-        # 6) Escalonar (se houver scaler)
+       
         X_train_mat, X_pred_mat = _maybe_scale_fit_transform(scaler, X_train_df, X_pred_df)
-
-        # 7) y de treino
-        y = pd.to_numeric(gdf_train["maduro_kg"], errors="coerce").values
-
-        # 8) Ajuste e predição
+        y = pd.to_numeric(gdf_train["maduro_kg"], errors="coerce").values        
         modelo.fit(X_train_mat, y)
         yhat = modelo.predict(X_pred_mat)
-
-        # 9) Predição + conversão e colunas lat/lon
+       
         gdf_pred["produtividade_kg"] = yhat
         gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (1/60) * (1/0.0016)
         if "latitude" not in gdf_pred.columns and "geometry" in gdf_pred.columns:
@@ -397,8 +360,7 @@ if st.button("▶️ Processar dados da próxima safra"):
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_csv = os.path.join(save_dir, f"predicao_sem_datas_{ts}.csv")
         gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(out_csv, index=False)
-
-        # (JSON interno opcional — salvo mas não exibido nem disponibilizado para download)
+       
         meta = {
             "treino_inicio": str(train_start),
             "treino_fim": str(train_end),
@@ -417,10 +379,7 @@ if st.button("▶️ Processar dados da próxima safra"):
     st.success("✅ Predição concluída e arquivos salvos!")
     st.download_button("📥 Baixar CSV de predição", data=open(out_csv,"rb").read(),
                        file_name=os.path.basename(out_csv), mime="text/csv")
-
-    # =========================
-    # Resultado principal: MÉDIA em sacas/ha
-    # =========================
+    
     try:
         df_pred_csv = _read_csv_robusto(out_csv)
         if "produtividade_sc/ha" in df_pred_csv.columns:
@@ -432,13 +391,9 @@ if st.button("▶️ Processar dados da próxima safra"):
     except Exception as e:
         st.warning(f"Não foi possível calcular a média a partir do CSV: {e}")
 
-    # =========================
-    # Mapa de variabilidade (RBF) com produtividade_kg + lat/lon
-    # =========================
     st.markdown("---")
     st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista")
-
-    # Reconstrói GeoDataFrame com lat/lon do CSV
+    
     try:
         dfp = _read_csv_robusto(out_csv)
         for col in ["produtividade_kg", "latitude", "longitude"]:
@@ -457,20 +412,17 @@ if st.button("▶️ Processar dados da próxima safra"):
     except Exception as e:
         st.error(f"Falha ao preparar dados de pontos para o mapa: {e}")
         st.stop()
-
-    # Define UTM adequado
+    
     epsg_utm = _auto_utm_epsg(gdf_area)
     gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
     gdf_points_utm = gdf_points_ll.to_crs(epsg=epsg_utm)
-
-    # Grade (5 m)
+    
     xmin, ymin, xmax, ymax = gdf_area_utm.total_bounds
     res = 5.0
     xi = np.arange(xmin, xmax, res)
     yi = np.arange(ymin, ymax, res)
     xi_grid, yi_grid = np.meshgrid(xi, yi)
-
-    # Interpolação RBF (thin-plate)
+    
     xy = np.column_stack([gdf_points_utm.geometry.x.values, gdf_points_utm.geometry.y.values])
     z  = gdf_points_utm["produtividade_kg"].astype(float).values
     
@@ -486,11 +438,9 @@ if st.button("▶️ Processar dados da próxima safra"):
             mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
             zi_masked = np.full_like(zi, np.nan, dtype=float)
             zi_masked[mask] = zi[mask]
-
-            # Plot (sem "RBF" no título)
-            fig, ax = plt.subplots(figsize=(10, 8))
             
-            # CORREÇÃO: Transpor a matriz para orientação correta
+            fig, ax = plt.subplots(figsize=(10, 8))
+                       
             zi_plot = zi_masked.T
             
             img = ax.imshow(
@@ -498,7 +448,7 @@ if st.button("▶️ Processar dados da próxima safra"):
                 extent=(xmin, xmax, ymin, ymax),
                 origin="lower", 
                 cmap="YlGn", 
-                aspect='auto'  # CORREÇÃO: Adicionar aspect auto
+                aspect='auto'  
             )
             
             gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
@@ -510,16 +460,14 @@ if st.button("▶️ Processar dados da próxima safra"):
             ax.set_ylabel("UTM Northing (m)")
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
-
-            # Download da figura
+           
             buf = io.BytesIO()
             fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
             st.download_button("🖼️ Baixar mapa (PNG)", data=buf.getvalue(),
                             file_name=f"mapa_variabilidade_{ts}.png", mime="image/png")
             
         except Exception as e:
-            st.error(f"Erro na interpolação ou plotagem: {e}")
-            # Fallback: mostrar apenas pontos
+            st.error(f"Erro na interpolação ou plotagem: {e}")            
             fig, ax = plt.subplots(figsize=(10, 8))
             gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
             scatter = gdf_points_utm.plot(ax=ax, c=gdf_points_utm["produtividade_kg"], 
