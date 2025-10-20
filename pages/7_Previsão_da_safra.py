@@ -177,9 +177,6 @@ if os.path.exists(params_path):
     except Exception:
         pass
 
-st.caption(f"📂 Origem: `{save_dir}`")
-st.caption(f"📍 Pontos: `{os.path.basename(pts_gpkg)}` | 🗺️ Área: `{os.path.basename(area_gpkg)}` | 🧠 Modelo: `{os.path.basename(model_path)}`")
-
 gdf_area = gpd.read_file(area_gpkg)
 gdf_area = gdf_area.set_crs(4326) if gdf_area.crs is None else gdf_area.to_crs(4326)
 
@@ -372,7 +369,7 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         if modelo is None or not hasattr(modelo, "fit"):
             st.error("❌ Arquivo de modelo não contém um estimador válido."); st.stop()
 
-        # 5) Alinhamento de features (sem exibir relatórios)
+        # 5) Alinhamento de features
         feats_expected = _expected_features_from(modelo, feats_bundle, feats_all)
         X_train_df, used_feats, _, _ = _smart_align(gdf_train, feats_expected)
         X_pred_df,  _,          _, _ = _smart_align(gdf_pred,  used_feats)
@@ -401,6 +398,7 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         out_csv = os.path.join(save_dir, f"predicao_sem_datas_{ts}.csv")
         gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(out_csv, index=False)
 
+        # (JSON interno opcional — salvo mas não exibido nem disponibilizado para download)
         meta = {
             "treino_inicio": str(train_start),
             "treino_fim": str(train_end),
@@ -417,12 +415,8 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
     st.success("✅ Predição concluída e arquivos salvos!")
-    st.caption(f"CSV de predição: `{out_csv}`")
-    st.caption(f"JSON (parâmetros): `{out_meta}`")
     st.download_button("📥 Baixar CSV de predição", data=open(out_csv,"rb").read(),
                        file_name=os.path.basename(out_csv), mime="text/csv")
-    st.download_button("📥 Baixar JSON de parâmetros", data=open(out_meta,"rb").read(),
-                       file_name=os.path.basename(out_meta), mime="application/json")
 
     # =========================
     # Resultado principal: MÉDIA em sacas/ha
@@ -444,7 +438,7 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
     st.markdown("---")
     st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista")
 
-    # Reconstrói GeoDataFrame com lat/lon do CSV para garantir consistência
+    # Reconstrói GeoDataFrame com lat/lon do CSV
     try:
         dfp = _read_csv_robusto(out_csv)
         for col in ["produtividade_kg", "latitude", "longitude"]:
@@ -465,6 +459,13 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         st.stop()
 
     # Define UTM adequado
+    def _auto_utm_epsg(geom_gdf: gpd.GeoDataFrame) -> int:
+        if not HAVE_PYPROJ: return 32722
+        centroid = geom_gdf.geometry.unary_union.centroid
+        lon = float(centroid.x); lat = float(centroid.y)
+        zone = int((lon + 180) // 6) + 1
+        return int(f"{326 if lat >= 0 else 327}{zone:02d}")
+
     epsg_utm = _auto_utm_epsg(gdf_area)
     gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
     gdf_points_utm = gdf_points_ll.to_crs(epsg=epsg_utm)
@@ -487,11 +488,20 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
 
         # Máscara do polígono
         poly_union = gdf_area_utm.geometry.unary_union
+        def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
+            prep_poly = prep(poly_union)
+            flat = np.c_[xi_grid.ravel(), yi_grid.ravel()]
+            mask = np.fromiter(
+                (prep_poly.contains(Polygon([(x,y),(x+0.1,y),(x+0.1,y+0.1),(x,y+0.1)]).centroid) for x,y in flat),
+                dtype=bool, count=flat.shape[0]
+            )
+            return mask.reshape(xi_grid.shape)
+
         mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
         zi_masked = np.full_like(zi, np.nan, dtype=float)
         zi_masked[mask] = zi[mask]
 
-        # Plot
+        # Plot (sem “RBF” no título)
         fig, ax = plt.subplots(figsize=(10, 8))
         img = ax.imshow(
             zi_masked, extent=(xmin, xmax, ymin, ymax),
@@ -501,7 +511,7 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         gdf_points_utm.plot(ax=ax, color="red", markersize=16)
         cbar = plt.colorbar(img, ax=ax, shrink=0.75)
         cbar.set_label("Produtividade Predita (kg)")
-        ax.set_title(f"Variabilidade Espacial — Spline (RBF) | EPSG:{epsg_utm}")
+        ax.set_title("Variabilidade Espacial da Produtividade Prevista")
         ax.set_xlabel("UTM Easting (m)")
         ax.set_ylabel("UTM Northing (m)")
         plt.tight_layout()
