@@ -92,11 +92,11 @@ with st.sidebar:
     end   = st.date_input("Fim", value=date.today())
     cloud_thr = st.slider("Nuvem máxima (%)", 0, 80, 15, 1)
     buffer_m  = st.slider("Raio do buffer (m)", 1, 30, 5, 1)
-    max_days  = st.slider("Máximo de datas a processar", 1, 120, 40, 1)
+    # REMOVIDO: Máximo de datas a processar
     indices_sel = st.multiselect(
         "Índices espectrais",
         ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"],
-        default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"]
+        default=["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]  # TODOS selecionados por padrão
     )
     btn = st.button("▶️ Executar processamento")
 
@@ -195,9 +195,6 @@ def process_all():
         st.warning("Nenhuma data encontrada no período/limite de nuvens.")
         st.stop()
 
-    # Limite de segurança
-    dates = dates[:max_days]
-
     # Buffer nos pontos mantendo propriedades
     def _buf(f):
         return ee.Feature(f.geometry().buffer(buffer_m)).copyProperties(f)
@@ -292,7 +289,7 @@ if gdf_out is not None:
     csv_bytes = gdf_out.drop(columns=["geometry"]).to_csv(index=False).encode("utf-8")
     st.download_button("📥 Baixar CSV completo", csv_bytes, file_name="indices_espectrais_pontos.csv", mime="text/csv")
 
-    st.info(f"Arquivos salvos: **GPKG**: `{paths['gpkg']}` | **CSV**: `{paths['csv']}`")
+    # REMOVIDO: Mensagem dos caminhos dos arquivos salvos
 
     with st.expander("ℹ️ Metadados do processamento"):
         st.write({
@@ -305,4 +302,3 @@ if gdf_out is not None:
         })
 else:
     st.info("Defina o período/índices e clique em **Executar processamento**.")
-
