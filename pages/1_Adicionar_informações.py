@@ -17,7 +17,7 @@ from io import BytesIO
 # ---- Estilo / CSS ----
 st.markdown("""
     <style>
-    .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; margin-top: -2rem !important; }
+    .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; }
     header, footer {visibility: hidden;}
     div[data-testid="stVerticalBlock"] { gap: 0.1rem !important; }
     section.main > div:first-child { padding-top: 0.5rem !important; }
@@ -48,6 +48,9 @@ st.markdown("""
     .controls-group label { font-size: 11px !important; }
     .controls-group .stButton>button { padding: 2px 8px !important; font-size: 11px !important; margin: 1px 0 !important; }
     .stNumberInput input, .stSelectbox select { padding: 2px 8px !important; min-height: 30px !important; }
+    
+    /* Espaço específico após o título do mapa */
+    .map-title-container { margin-bottom: 8px !important; display: block; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -424,7 +427,7 @@ def salvar_no_streamlit_cloud():
 # =======================
 
 # Mapa de visualização (estável na área amostral)
-st.markdown("<h4 style='margin-bottom:0px; padding-bottom:0px'>Mapa de visualização</h4>", unsafe_allow_html=True)
+st.markdown("<div class='map-title-container'><h4 style='margin-bottom:0px; padding-bottom:0px'>Mapa de visualização</h4></div>", unsafe_allow_html=True)
 mapa = create_map()
 # a classe 'streamlit-folium' é injetada pelo pacote; o CSS acima reduz o espaço depois do mapa
 mapa_data = st_folium(mapa, width=900, height=500, key='mapa_principal')
