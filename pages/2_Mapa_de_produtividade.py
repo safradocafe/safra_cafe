@@ -294,5 +294,4 @@ with st.sidebar:
     st.pyplot(fig, use_container_width=True)
 
 # Render
-st.markdown(f"**Origem dos dados:** `{base_dir or 'desconhecida'}`")
 st_folium(m, width=1000, height=640, key="mapa_produtividade_interp")
