@@ -19,13 +19,14 @@ st.markdown("""
     <style>
     .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; }
     header, footer {visibility: hidden;}
-    
-    /* Reduz espaçamento entre elementos */
-    .stMarkdown { margin: 0 0 0.5rem 0 !important; }
-    .stButton>button { margin: 0.2rem 0 !important; }
-    .stNumberInput, .stSelectbox, .stFileUploader { margin: 0.2rem 0 !important; }
 
-    /* File uploader em PT-BR e mais compacto */
+    /* Reduz espaçamentos verticais gerais */
+    .stMarkdown, .stButton, .stNumberInput, .stSelectbox, .stFileUploader { margin: 0.2rem 0 !important; }
+
+    /* Reduz o espaço logo abaixo do iframe do mapa */
+    .streamlit-folium, .streamlit-folium iframe { margin-bottom: 0.2rem !important; }
+
+    /* File uploader PT-BR e compacto */
     div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
         border: 1px dashed #999 !important;
         background: #fafafa !important;
@@ -33,52 +34,18 @@ st.markdown("""
         min-height: 60px !important;
         margin: 0.2rem 0 !important;
     }
-    /* Esconde textos padrão em inglês */
     div[data-testid="stFileUploaderDropzone"] small, 
-    div[data-testid="stFileUploaderDropzone"] span {
-        display: none !important;
-    }
-    /* Insere textos em português */
+    div[data-testid="stFileUploaderDropzone"] span { display: none !important; }
     div[data-testid="stFileUploaderDropzone"]::after {
         content: "Arraste e solte o arquivo aqui ou clique para selecionar";
-        display: block;
-        color: #444;
-        font-size: 11px;
-        text-align: center;
-        padding-top: 4px;
+        display: block; color: #444; font-size: 11px; text-align: center; padding-top: 4px;
     }
 
-    /* Subtítulos compactos */
-    .sub-mini { 
-        font-size: 11px !important; 
-        font-weight: 600; 
-        margin: 4px 0 2px 0 !important; 
-        padding: 0 !important;
-    }
-    .controls-title { 
-        font-size: 12px !important; 
-        font-weight: 700; 
-        margin: 8px 0 4px 0 !important;
-        padding: 0 !important;
-    }
+    .sub-mini { font-size: 11px !important; font-weight: 600; margin: 4px 0 2px 0 !important; padding: 0 !important; }
+    .controls-title { font-size: 12px !important; font-weight: 700; margin: 6px 0 4px 0 !important; padding: 0 !important; }
     .controls-group label { font-size: 11px !important; }
-    .controls-group .stButton>button { 
-        padding: 2px 8px !important; 
-        font-size: 11px !important;
-        margin: 1px 0 !important;
-    }
-    
-    /* Reduz altura dos inputs */
-    .stNumberInput input, .stSelectbox select {
-        padding: 2px 8px !important;
-        min-height: 30px !important;
-    }
-    
-    /* Container mais compacto */
-    .main .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-    }
+    .controls-group .stButton>button { padding: 2px 8px !important; font-size: 11px !important; margin: 1px 0 !important; }
+    .stNumberInput input, .stSelectbox select { padding: 2px 8px !important; min-height: 30px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -121,21 +88,27 @@ def _fit_bounds_from_gdf(gdf):
     return [[b[1], b[0]], [b[3], b[2]]]
 
 def create_map():
-    # Se houver área amostral, o mapa será ajustado ao polígono. Caso contrário, visão do Brasil.
+    """
+    Mantém o enquadramento estável na área amostral e exibe as opções
+    de base 'Mapa (ruas)' e 'Satélite' no controle de camadas.
+    """
+    # cria o mapa sem camada base padrão para podermos controlar as bases
     if st.session_state.gdf_poligono is not None:
-        m = folium.Map(location=[0,0], zoom_start=2, tiles="OpenStreetMap")
-        # Enquadra na área amostral
+        m = folium.Map(location=[0, 0], zoom_start=2, tiles=None, control_scale=True)
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
         st.session_state.map_fit_bounds = bounds
         m.fit_bounds(bounds, padding=(20, 20))
     else:
-        m = folium.Map(location=[-15, -55], zoom_start=4, tiles="OpenStreetMap")
+        m = folium.Map(location=[-15, -55], zoom_start=4, tiles=None, control_scale=True)
 
+    # bases: ruas e satélite
+    folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True).add_to(m)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satélite', overlay=False, control=True
+        attr='Esri', name='Satélite', control=True
     ).add_to(m)
 
+    # desenho
     draw = folium.plugins.Draw(
         draw_options={
             'polyline': False, 'rectangle': True, 'circle': False,
@@ -146,20 +119,19 @@ def create_map():
     )
     draw.add_to(m)
 
-    # MOSTRAR ÁREA AMOSTRAL
+    # área amostral
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
             name="Área amostral",
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.3}
         ).add_to(m)
-        # reforça enquadramento a cada render
         try:
             m.fit_bounds(st.session_state.map_fit_bounds, padding=(20, 20))
         except Exception:
             pass
 
-    # MOSTRAR PONTOS
+    # pontos
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
@@ -168,7 +140,8 @@ def create_map():
                 popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']}"
             ).add_to(m)
 
-    folium.LayerControl().add_to(m)
+    # controle de camadas visível
+    folium.LayerControl(position='topright', collapsed=False).add_to(m)
     return m
 
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
@@ -449,9 +422,13 @@ def salvar_no_streamlit_cloud():
 # =======================
 
 # Mapa de visualização (estável na área amostral)
-st.markdown("<h4>Mapa de visualização</h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='margin-bottom:4px'>Mapa de visualização</h4>", unsafe_allow_html=True)
 mapa = create_map()
+# a classe 'streamlit-folium' é injetada pelo pacote; o CSS acima reduz o espaço depois do mapa
 mapa_data = st_folium(mapa, width=900, height=520, key='mapa_principal')
+
+# sem linhas em branco entre o mapa e os controles:
+st.markdown('<div class="controls-title">Controles</div>', unsafe_allow_html=True)
 
 # Captura desenho no mapa
 if mapa_data and mapa_data.get('last_active_drawing'):
