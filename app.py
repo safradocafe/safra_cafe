@@ -22,14 +22,24 @@ O projeto é resultado de pesquisas no Mestrado Profissional em Agricultura de P
 **Autoria:** Rozymario Bittencourt Fagundes  
 **Contatos:** rozymariofagundes@gmail.com | +55 77 98849 1600
 
-**Leia a dissertação:** Sensoriamento remoto e redes neurais na estimativa da produtividade do café arábica na Bahia  
-**Link direto:** [https://repositorio.ufsm.br/handle/1/35196](https://repositorio.ufsm.br/handle/1/35196)
+**Leia a dissertação:** Sensoriamento remoto e redes neurais na estimativa da produtividade do café arábica na Bahia:
+
+[https://repositorio.ufsm.br/handle/1/35196](https://repositorio.ufsm.br/handle/1/35196)
 
 Conheça outras pesquisas do autor sobre *Cafeicultura de Precisão**:
+
 **Coffee Science:**
-Diagnosis about the perspectives of precision applications of coffee growing technologies in municipalities of Bahia, Brazil: https://coffeescience.ufla.br/index.php/Coffeescience/article/view/2034
-**Geomatics:**
-Analysis of Resampling Methods for the Red Edge Band of MSI/Sentinel-2A for Coffee Cultivation Monitoring: https://www.mdpi.com/2673-7418/5/2/19 
+
+Diagnosis about the perspectives of precision applications of coffee growing technologies in municipalities of Bahia, Brazil:
+
+[https://coffeescience.ufla.br/index.php/Coffeescience/article/view/2034](https://coffeescience.ufla.br/index.php/Coffeescience/article/view/2034)
+
+**Geomatics/MPDI:**
+
+Analysis of Resampling Methods for the Red Edge Band of MSI/Sentinel-2A for Coffee Cultivation Monitoring:
+
+[https://www.mdpi.com/2673-7418/5/2/19](https://www.mdpi.com/2673-7418/5/2/19)
+ 
 """
 )
 
