@@ -28,7 +28,7 @@ Sensoriamento remoto e redes neurais na estimativa da produtividade do café ar�
 
 [https://repositorio.ufsm.br/handle/1/35196](https://repositorio.ufsm.br/handle/1/35196)
 
-Conheça outras pesquisas do autor sobre *Cafeicultura de Precisão**:
+Conheça outras pesquisas do autor sobre **Cafeicultura de Precisão**:
 
 **Coffee Science:**
 
