@@ -27,7 +27,7 @@ except Exception:
 # Página / estilo
 # =========================
 st.set_page_config(layout="wide")
-st.markdown("## ☕ Predição por safra (reprocessar com GEE)")
+st.markdown("## ☕ Saiba a sua próxima safra")
 st.caption(
     "Recalcula índices no GEE para **treinamento** (safra passada) e **predição** (safra futura) "
     "usando o polígono e os pontos salvos na nuvem. Em seguida aplica o **melhor modelo salvo**."
@@ -344,7 +344,7 @@ def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
 # =========================
 # Executar
 # =========================
-if st.button("▶️ Reprocessar índices no GEE e prever"):
+if st.button("▶️ Processar dados da próxima safra"):
     with st.spinner("Processando…"):
         # 1) Coleções
         col_train = processar_colecao(train_start, train_end, roi, cloud_train)
