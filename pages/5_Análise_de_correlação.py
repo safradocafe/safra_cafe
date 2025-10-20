@@ -185,7 +185,7 @@ raw_bytes = None
 if latest_csv_path and os.path.exists(latest_csv_path):
     with open(latest_csv_path, "rb") as f:
         raw_bytes = f.read()
-    st.success(f"✅ CSV carregado automaticamente: `{latest_csv_path}`")
+    st.success(f"✅ CSV carregado automaticamente")
 
 # upload manual (se existir, sobrescreve o automático)
 up = st.file_uploader("Ou selecione manualmente o CSV gerado na aba de Processamento", type=["csv"])
