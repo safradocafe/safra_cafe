@@ -427,9 +427,6 @@ mapa = create_map()
 # a classe 'streamlit-folium' é injetada pelo pacote; o CSS acima reduz o espaço depois do mapa
 mapa_data = st_folium(mapa, width=900, height=520, key='mapa_principal')
 
-# sem linhas em branco entre o mapa e os controles:
-st.markdown('<div class="controls-title">Controles</div>', unsafe_allow_html=True)
-
 # Captura desenho no mapa
 if mapa_data and mapa_data.get('last_active_drawing'):
     geometry = mapa_data['last_active_drawing']['geometry']
