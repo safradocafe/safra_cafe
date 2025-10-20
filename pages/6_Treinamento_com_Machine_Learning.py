@@ -1,4 +1,4 @@
-# pages/4_2_Treinamento_ML.py 
+# pages/6_Treinamento_ML.py 
 import os, glob, io, csv, random, joblib
 from datetime import datetime
 
@@ -252,7 +252,7 @@ def _make_model(name: str):
         "SVR": SVR(kernel='rbf', C=1.0, epsilon=0.1),
         "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=GLOBAL_SEED),
         "RandomForest": RandomForestRegressor(n_estimators=100, random_state=GLOBAL_SEED),
-        "GradientBoosting": GradientBoostingRegressor(n_estimadores=100, random_state=GLOBAL_SEED),
+        "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=GLOBAL_SEED),
         "AdaBoost": AdaBoostRegressor(n_estimators=100, random_state=GLOBAL_SEED),
         "DecisionTree": DecisionTreeRegressor(random_state=GLOBAL_SEED),
         "KNN": KNeighborsRegressor(n_neighbors=5),
