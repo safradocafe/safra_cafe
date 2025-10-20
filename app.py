@@ -22,7 +22,9 @@ O projeto é resultado de pesquisas no Mestrado Profissional em Agricultura de P
 **Autoria:** Rozymario Bittencourt Fagundes  
 **Contatos:** rozymariofagundes@gmail.com | +55 77 98849 1600
 
-**Leia a dissertação:** Sensoriamento remoto e redes neurais na estimativa da produtividade do café arábica na Bahia:
+**Leia a dissertação:**
+
+Sensoriamento remoto e redes neurais na estimativa da produtividade do café arábica na Bahia
 
 [https://repositorio.ufsm.br/handle/1/35196](https://repositorio.ufsm.br/handle/1/35196)
 
