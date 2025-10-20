@@ -12,10 +12,10 @@ st.caption("Sistema avançado de geotecnologias para **Cafeicultura de Precisão
 
 st.markdown(
     """
-**O objetivo deste protótipo é integrar amostras geolocalizadas de produtividade do café, imagens so sensor MSI/Sentinel-2AB via Google Earth Engine (GEE) e Machine Learning para:**
+**Este é um protótipo que integra amostras geolocalizadas de produtividade do café, imagens do sensor MSI/Sentinel-2AB via Google Earth Engine (GEE) e Machine Learning para:**
 - gerar mapas de variabilidade espacial da produtividade;  
 - monitorar áreas de produção com índices espectrais (NDVI, NDRE, CCCI, GNDVI, NDMI, MSAVI2, NBR, TWI2, NDWI);  
-- processar dados, analisar correlação e prever a safra.
+- processar dados, analisar a correlação da produtividade com os índices espectrais, treinar com ML e prever a própxima safra.
 
 O projeto é resultado de pesquisas no Mestrado Profissional em Agricultura de Precisão da Universidade Federal de Santa Maria (UFSM).
 
