@@ -12,10 +12,18 @@ st.caption("Sistema avançado de geotecnologias para Cafeicultura de Precisão")
 
 st.markdown(
     """
-**Protótipo que integra amostras geolocalizadas de produtividade, imagens Sentinel-2 (MSI) via Google Earth Engine e Machine Learning para:**
+**O objetivo deste protótipo é integrar amostras geolocalizadas de produtividade do café, imagens so sensor MSI/Sentinel-2AB via Google Earth Engine (GEE) e Machine Learning para:**
 - gerar mapas de variabilidade espacial da produtividade;  
 - monitorar áreas de produção com índices espectrais (NDVI, NDRE, CCCI, GNDVI, NDMI, MSAVI2, NBR, TWI2, NDWI);  
 - processar dados, analisar correlação e prever a safra.
+
+O projeto é resultado de pesquisas no Mestrado Profissional em Agricultura de Precisão da Universidade Federal de Santa Maria (UFSM).
+
+**Leia a dissertação:** Sensoriamento remoto e redes neurais na estimativa da produtividade do café arábica na Bahia  
+**Link direto:** [https://repositorio.ufsm.br/handle/1/35196](https://repositorio.ufsm.br/handle/1/35196)
+
+**Autoria:** Rozymario Bittencourt Fagundes  
+**Contatos:** rozymariofagundes@gmail.com | +55 77 98849 1600 
 """
 )
 
@@ -35,4 +43,14 @@ with col2:
     st.page_link("pages/7_Previsão_da_safra.py", label="☕ Previsão da safra", icon="📅")
 
 st.divider()
-st.info("Dica: siga a ordem das abas para um fluxo completo, iniciando por **Adicionar informações** e finalizando em **Previsão da safra**.")
+st.markdown(
+    """
+**A base de dados para funcionamento deste código são arquivos da área de produção e amostras da produtividade de uma safra.** 
+
+Caso não tenha esses dados para teste do sistema, você pode baixá-los neste link: [https://drive.google.com/drive/folders/1h5hSdq3PXXxKoX8NEpqH1qGoT59RjoG6?usp=drive_link](https://drive.google.com/drive/folders/1h5hSdq3PXXxKoX8NEpqH1qGoT59RjoG6?usp=drive_link)
+
+**Observação:** esses dados foram utilizados na pesquisa do mestrado e devem ser utulizados conforme a metodologia proposta. Eles são relativos à safra de café de 2024. A seleção de imagens de satélite para processamento dos dados deve ter como início 01/08/2023 e fim 31/05/2024. Caso utilize dados da sua fazenda, eles devem estar no formato .gpkg. Você pode nomeá-los como quiser. É possível também inserir os dados de forma manual no sistema.
+
+**Dica:** siga a ordem das abas para um fluxo completo, iniciando por **Adicionar informações** e finalizando em **Previsão da safra**.
+"""
+)
