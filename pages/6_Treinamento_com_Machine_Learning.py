@@ -126,7 +126,7 @@ if df.empty or "maduro_kg" not in df.columns:
     st.error("❌ Não foi possível encontrar 'maduro_kg' e colunas de índices no CSV carregado.")
     st.stop()
 
-st.success(f"✅ CSV carregado: `{latest_csv_path}`")
+st.success(f"✅ CSV carregado")
 with st.expander("Pré-visualização (dados tratados para ML)"):
     st.dataframe(df.head(), use_container_width=True)
 
