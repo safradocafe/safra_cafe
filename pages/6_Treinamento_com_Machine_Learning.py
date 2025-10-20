@@ -1,4 +1,4 @@
-# pages/4_2_Treinamento_ML.py
+# pages/4_2_Treinamento_ML.py 
 import os, glob, io, csv, random, joblib
 from datetime import datetime
 
@@ -252,7 +252,7 @@ def _make_model(name: str):
         "SVR": SVR(kernel='rbf', C=1.0, epsilon=0.1),
         "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=GLOBAL_SEED),
         "RandomForest": RandomForestRegressor(n_estimators=100, random_state=GLOBAL_SEED),
-        "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=GLOBAL_SEED),
+        "GradientBoosting": GradientBoostingRegressor(n_estimadores=100, random_state=GLOBAL_SEED),
         "AdaBoost": AdaBoostRegressor(n_estimators=100, random_state=GLOBAL_SEED),
         "DecisionTree": DecisionTreeRegressor(random_state=GLOBAL_SEED),
         "KNN": KNeighborsRegressor(n_neighbors=5),
@@ -328,12 +328,3 @@ if melhor_modelo_nome in {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}:
 out_path = os.path.join(BASE_TMP, f"melhor_modelo_{melhor_modelo_nome}.pkl")
 os.makedirs(BASE_TMP, exist_ok=True)
 joblib.dump(bundle, out_path)
-
-st.download_button(
-    "💾 Baixar melhor modelo (PKL)",
-    data=open(out_path, "rb").read(),
-    file_name=f"melhor_modelo_{melhor_modelo_nome}.pkl",
-    mime="application/octet-stream"
-)
-
-st.caption(f"Modelo salvo temporariamente em: `{out_path}`")
