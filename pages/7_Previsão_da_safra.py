@@ -24,7 +24,7 @@ try:
 except Exception:
     HAVE_PYPROJ = False
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Previsão de Safra")
 st.markdown("## ☕ Saiba a sua próxima safra")
 st.caption(
     "Recalcula índices no GEE para **treinamento** (safra passada) e **predição** (safra futura) "
@@ -33,6 +33,12 @@ st.caption(
 
 BASE_TMP = "/tmp/streamlit_dados"
 TOKENS_IDX = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
+
+# Inicializar session state
+if 'processing_complete' not in st.session_state:
+    st.session_state.processing_complete = False
+if 'processed_data' not in st.session_state:
+    st.session_state.processed_data = None
 
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base): return None
@@ -353,7 +359,68 @@ def create_interactive_map(gdf_points, gdf_area, prod_column="produtividade_kg")
     
     return m
 
-if st.button("▶️ Processar dados"):
+# Botão de processamento
+process_btn = st.button("▶️ Processar dados")
+
+# Se o processamento já foi concluído, mostrar resultados da session state
+if st.session_state.processing_complete and st.session_state.processed_data:
+    st.success("✅ Predição concluída e arquivos salvos!")
+    
+    # Recuperar dados da session state
+    processed_data = st.session_state.processed_data
+    gdf_pred = processed_data['gdf_pred']
+    out_csv = processed_data['out_csv']
+    media_sc_ha = processed_data['media_sc_ha']
+    
+    # Botão de download
+    st.download_button("📥 Baixar CSV de predição", data=open(out_csv,"rb").read(),
+                       file_name=os.path.basename(out_csv), mime="text/csv")
+    
+    # Métrica de produtividade
+    st.markdown("### 📌 Produtividade média prevista (safra)")
+    st.metric("Média (sacas/ha)", f"{media_sc_ha:.2f}")
+
+    st.markdown("---")
+    st.subheader("🗺️ Mapa Interativo de Variabilidade Espacial")
+    
+    try:
+        # Criar mapa interativo
+        interactive_map = create_interactive_map(gdf_pred, gdf_area)
+        
+        # Exibir mapa com key única para evitar rerun
+        st_folium(interactive_map, width=1200, height=600, key="main_map")
+        
+        # Legenda explicativa
+        st.info("""
+        **🎨 Legenda do Mapa:**
+        - **Área em preto**: Limite da área de estudo
+        - **Pontos coloridos**: Produtividade prevista (kg)
+          - Verde mais claro: Produtividade mais baixa
+          - Verde mais escuro: Produtividade mais alta
+        - **Clique nos pontos** para ver detalhes da produtividade
+        """)
+        
+    except Exception as e:
+        st.error(f"Erro ao criar mapa interativo: {e}")
+        
+        # Fallback para visualização simples
+        st.warning("Exibindo visualização alternativa...")
+        try:
+            fig, ax = plt.subplots(figsize=(12, 8))
+            gdf_area.boundary.plot(ax=ax, color='black', linewidth=2, label='Área de estudo')
+            scatter = gdf_pred.plot(ax=ax, c=gdf_pred['produtividade_kg'], 
+                                  cmap='YlGn', markersize=100, alpha=0.7,
+                                  legend=True, legend_kwds={'label': 'Produtividade (kg)'})
+            ax.set_title('Produtividade Prevista - Pontos Amostrais')
+            ax.set_xlabel('Longitude')
+            ax.set_ylabel('Latitude')
+            plt.tight_layout()
+            st.pyplot(fig)
+        except Exception as e2:
+            st.error(f"Erro também na visualização alternativa: {e2}")
+
+# Processar dados quando o botão é clicado
+elif process_btn:
     with st.spinner("Processando…"):
         
         col_train = processar_colecao(train_start, train_end, roi, cloud_train)
@@ -412,56 +479,24 @@ if st.button("▶️ Processar dados"):
         with open(out_meta, "w") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    st.success("✅ Predição concluída e arquivos salvos!")
-    st.download_button("📥 Baixar CSV de predição", data=open(out_csv,"rb").read(),
-                       file_name=os.path.basename(out_csv), mime="text/csv")
-    
-    try:
+        # Calcular média para exibição
         df_pred_csv = _read_csv_robusto(out_csv)
         if "produtividade_sc/ha" in df_pred_csv.columns:
             media_sc_ha = pd.to_numeric(df_pred_csv["produtividade_sc/ha"], errors="coerce").mean()
-            st.markdown("### 📌 Produtividade média prevista (safra)")
-            st.metric("Média (sacas/ha)", f"{media_sc_ha:.2f}")
         else:
-            st.warning("Coluna 'produtividade_sc/ha' não encontrada no CSV de predição.")
-    except Exception as e:
-        st.warning(f"Não foi possível calcular a média a partir do CSV: {e}")
+            media_sc_ha = 0
 
-    st.markdown("---")
-    st.subheader("🗺️ Mapa Interativo de Variabilidade Espacial")
-    
-    try:
-        # Criar mapa interativo
-        interactive_map = create_interactive_map(gdf_pred, gdf_area)
-        
-        # Exibir mapa
-        st_folium(interactive_map, width=1200, height=600)
-        
-        # Legenda explicativa
-        st.info("""
-        **🎨 Legenda do Mapa:**
-        - **Área em preto**: Limite da área de estudo
-        - **Pontos coloridos**: Produtividade prevista (kg)
-          - Verde mais claro: Produtividade mais baixa
-          - Verde mais escuro: Produtividade mais alta
-        - **Clique nos pontos** para ver detalhes da produtividade
-        """)
-        
-    except Exception as e:
-        st.error(f"Erro ao criar mapa interativo: {e}")
-        
-        # Fallback para visualização simples
-        st.warning("Exibindo visualização alternativa...")
-        try:
-            fig, ax = plt.subplots(figsize=(12, 8))
-            gdf_area.boundary.plot(ax=ax, color='black', linewidth=2, label='Área de estudo')
-            scatter = gdf_pred.plot(ax=ax, c=gdf_pred['produtividade_kg'], 
-                                  cmap='YlGn', markersize=100, alpha=0.7,
-                                  legend=True, legend_kwds={'label': 'Produtividade (kg)'})
-            ax.set_title('Produtividade Prevista - Pontos Amostrais')
-            ax.set_xlabel('Longitude')
-            ax.set_ylabel('Latitude')
-            plt.tight_layout()
-            st.pyplot(fig)
-        except Exception as e2:
-            st.error(f"Erro também na visualização alternativa: {e2}")
+        # Armazenar resultados na session state
+        st.session_state.processing_complete = True
+        st.session_state.processed_data = {
+            'gdf_pred': gdf_pred,
+            'out_csv': out_csv,
+            'media_sc_ha': media_sc_ha
+        }
+
+    # Recarregar a página para mostrar resultados
+    st.rerun()
+
+# Mensagem inicial
+else:
+    st.info("👆 Configure os parâmetros no sidebar e clique em **Processar dados** para iniciar a previsão da safra.")
