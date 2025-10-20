@@ -459,13 +459,6 @@ if st.button("▶️ Processar dados da próxima safra"):
         st.stop()
 
     # Define UTM adequado
-    def _auto_utm_epsg(geom_gdf: gpd.GeoDataFrame) -> int:
-        if not HAVE_PYPROJ: return 32722
-        centroid = geom_gdf.geometry.unary_union.centroid
-        lon = float(centroid.x); lat = float(centroid.y)
-        zone = int((lon + 180) // 6) + 1
-        return int(f"{326 if lat >= 0 else 327}{zone:02d}")
-
     epsg_utm = _auto_utm_epsg(gdf_area)
     gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
     gdf_points_utm = gdf_points_ll.to_crs(epsg=epsg_utm)
@@ -480,45 +473,59 @@ if st.button("▶️ Processar dados da próxima safra"):
     # Interpolação RBF (thin-plate)
     xy = np.column_stack([gdf_points_utm.geometry.x.values, gdf_points_utm.geometry.y.values])
     z  = gdf_points_utm["produtividade_kg"].astype(float).values
+    
     if len(z) < 3:
         st.warning("Pontos insuficientes para interpolação. É necessário ≥ 3 pontos.")
     else:
-        rbf = Rbf(xy[:,0], xy[:,1], z, function="thin_plate")
-        zi = rbf(xi_grid, yi_grid)
+        try:
+            rbf = Rbf(xy[:,0], xy[:,1], z, function="thin_plate")
+            zi = rbf(xi_grid, yi_grid)
 
-        # Máscara do polígono
-        poly_union = gdf_area_utm.geometry.unary_union
-        def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
-            prep_poly = prep(poly_union)
-            flat = np.c_[xi_grid.ravel(), yi_grid.ravel()]
-            mask = np.fromiter(
-                (prep_poly.contains(Polygon([(x,y),(x+0.1,y),(x+0.1,y+0.1),(x,y+0.1)]).centroid) for x,y in flat),
-                dtype=bool, count=flat.shape[0]
+            # Máscara do polígono
+            poly_union = gdf_area_utm.geometry.unary_union
+            mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
+            zi_masked = np.full_like(zi, np.nan, dtype=float)
+            zi_masked[mask] = zi[mask]
+
+            # Plot (sem "RBF" no título)
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # CORREÇÃO: Transpor a matriz para orientação correta
+            zi_plot = zi_masked.T
+            
+            img = ax.imshow(
+                zi_plot, 
+                extent=(xmin, xmax, ymin, ymax),
+                origin="lower", 
+                cmap="YlGn", 
+                aspect='auto'  # CORREÇÃO: Adicionar aspect auto
             )
-            return mask.reshape(xi_grid.shape)
+            
+            gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
+            gdf_points_utm.plot(ax=ax, color="red", markersize=16)
+            cbar = plt.colorbar(img, ax=ax, shrink=0.75)
+            cbar.set_label("Produtividade Predita (kg)")
+            ax.set_title("Variabilidade Espacial da Produtividade Prevista")
+            ax.set_xlabel("UTM Easting (m)")
+            ax.set_ylabel("UTM Northing (m)")
+            plt.tight_layout()
+            st.pyplot(fig, use_container_width=True)
 
-        mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
-        zi_masked = np.full_like(zi, np.nan, dtype=float)
-        zi_masked[mask] = zi[mask]
-
-        # Plot (sem “RBF” no título)
-        fig, ax = plt.subplots(figsize=(10, 8))
-        img = ax.imshow(
-            zi_masked, extent=(xmin, xmax, ymin, ymax),
-            origin="lower", cmap="YlGn", interpolation="nearest"
-        )
-        gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
-        gdf_points_utm.plot(ax=ax, color="red", markersize=16)
-        cbar = plt.colorbar(img, ax=ax, shrink=0.75)
-        cbar.set_label("Produtividade Predita (kg)")
-        ax.set_title("Variabilidade Espacial da Produtividade Prevista")
-        ax.set_xlabel("UTM Easting (m)")
-        ax.set_ylabel("UTM Northing (m)")
-        plt.tight_layout()
-        st.pyplot(fig, use_container_width=True)
-
-        # Download da figura
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
-        st.download_button("🖼️ Baixar mapa (PNG)", data=buf.getvalue(),
-                           file_name=f"mapa_variabilidade_{ts}.png", mime="image/png")
+            # Download da figura
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
+            st.download_button("🖼️ Baixar mapa (PNG)", data=buf.getvalue(),
+                            file_name=f"mapa_variabilidade_{ts}.png", mime="image/png")
+            
+        except Exception as e:
+            st.error(f"Erro na interpolação ou plotagem: {e}")
+            # Fallback: mostrar apenas pontos
+            fig, ax = plt.subplots(figsize=(10, 8))
+            gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
+            scatter = gdf_points_utm.plot(ax=ax, c=gdf_points_utm["produtividade_kg"], 
+                                        cmap="YlGn", markersize=50, alpha=0.7)
+            plt.colorbar(scatter.collections[0], ax=ax, shrink=0.75, label="Produtividade (kg)")
+            ax.set_title("Produtividade nos Pontos (fallback)")
+            ax.set_xlabel("UTM Easting (m)")
+            ax.set_ylabel("UTM Northing (m)")
+            st.pyplot(fig, use_container_width=True)
