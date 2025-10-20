@@ -17,15 +17,21 @@ from io import BytesIO
 # ---- Estilo / CSS ----
 st.markdown("""
     <style>
-    .block-container { padding-top: 0rem !important; padding-bottom: 1rem; }
+    .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; }
     header, footer {visibility: hidden;}
+    
+    /* Reduz espaçamento entre elementos */
+    .stMarkdown { margin: 0 0 0.5rem 0 !important; }
+    .stButton>button { margin: 0.2rem 0 !important; }
+    .stNumberInput, .stSelectbox, .stFileUploader { margin: 0.2rem 0 !important; }
 
     /* File uploader em PT-BR e mais compacto */
     div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
         border: 1px dashed #999 !important;
         background: #fafafa !important;
-        padding: 8px 10px !important;
-        min-height: 70px !important;
+        padding: 6px 8px !important;
+        min-height: 60px !important;
+        margin: 0.2rem 0 !important;
     }
     /* Esconde textos padrão em inglês */
     div[data-testid="stFileUploaderDropzone"] small, 
@@ -37,16 +43,42 @@ st.markdown("""
         content: "Arraste e solte o arquivo aqui ou clique para selecionar";
         display: block;
         color: #444;
-        font-size: 12px;
+        font-size: 11px;
         text-align: center;
-        padding-top: 6px;
+        padding-top: 4px;
     }
 
     /* Subtítulos compactos */
-    .sub-mini { font-size: 12px; font-weight: 600; margin: 6px 0 4px 0; }
-    .controls-title { font-size: 13px; font-weight: 700; margin: 12px 0 8px 0; }
-    .controls-group label { font-size: 12px !important; }
-    .controls-group .stButton>button { padding: 4px 10px; font-size: 12px; }
+    .sub-mini { 
+        font-size: 11px !important; 
+        font-weight: 600; 
+        margin: 4px 0 2px 0 !important; 
+        padding: 0 !important;
+    }
+    .controls-title { 
+        font-size: 12px !important; 
+        font-weight: 700; 
+        margin: 8px 0 4px 0 !important;
+        padding: 0 !important;
+    }
+    .controls-group label { font-size: 11px !important; }
+    .controls-group .stButton>button { 
+        padding: 2px 8px !important; 
+        font-size: 11px !important;
+        margin: 1px 0 !important;
+    }
+    
+    /* Reduz altura dos inputs */
+    .stNumberInput input, .stSelectbox select {
+        padding: 2px 8px !important;
+        min-height: 30px !important;
+    }
+    
+    /* Container mais compacto */
+    .main .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -499,4 +531,3 @@ with st.container():
         st.success("Áreas limpas!")
 
     st.markdown('</div>', unsafe_allow_html=True)
-
