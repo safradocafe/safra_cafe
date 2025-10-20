@@ -1,13 +1,14 @@
-# pages/7_Previsão_da_safra.py
 import os, glob, json, io, csv, unicodedata
 from datetime import datetime
 
 import ee
 import geemap
+import folium
 import pandas as pd
 import geopandas as gpd
 import numpy as np
 import streamlit as st
+from streamlit_folium import st_folium
 import joblib
 import warnings
 warnings.filterwarnings("ignore")
@@ -301,21 +302,56 @@ def _maybe_scale_fit_transform(scaler, X_train, X_pred):
         scaler.fit(X_train.values)
         return scaler.transform(X_train.values), scaler.transform(X_pred.values)
 
-def _auto_utm_epsg(geom_gdf: gpd.GeoDataFrame) -> int:
-    if not HAVE_PYPROJ: return 32722
-    centroid = geom_gdf.geometry.unary_union.centroid
-    lon = float(centroid.x); lat = float(centroid.y)
-    zone = int((lon + 180) // 6) + 1
-    return int(f"{326 if lat >= 0 else 327}{zone:02d}")
-
-def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
-    prep_poly = prep(poly_union)
-    flat = np.c_[xi_grid.ravel(), yi_grid.ravel()]
-    mask = np.fromiter(
-        (prep_poly.contains(Polygon([(x,y),(x+0.1,y),(x+0.1,y+0.1),(x,y+0.1)]).centroid) for x,y in flat),
-        dtype=bool, count=flat.shape[0]
-    )
-    return mask.reshape(xi_grid.shape)
+def create_interactive_map(gdf_points, gdf_area, prod_column="produtividade_kg"):
+    """Cria mapa interativo com pontos coloridos por produtividade"""
+    
+    # Centro do mapa
+    centroid = gdf_area.geometry.unary_union.centroid
+    m = folium.Map(location=[centroid.y, centroid.x], zoom_start=13)
+    
+    # Adicionar polígono da área
+    folium.GeoJson(
+        gdf_area.__geo_interface__,
+        style_function=lambda x: {
+            'fillColor': 'none',
+            'color': 'black',
+            'weight': 3,
+            'fillOpacity': 0
+        },
+        name="Área de Estudo"
+    ).add_to(m)
+    
+    # Normalizar valores para cores
+    values = gdf_points[prod_column].astype(float)
+    vmin, vmax = values.min(), values.max()
+    
+    # Adicionar pontos coloridos
+    for idx, row in gdf_points.iterrows():
+        if pd.notna(row[prod_column]) and row.geometry is not None:
+            # Cor baseada no valor (verde claro a escuro)
+            normalized_val = (float(row[prod_column]) - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+            color = f"#{int(34 + normalized_val * 170):02x}{int(139 + normalized_val * 116):02x}{int(34 + normalized_val * 34):02x}"
+            
+            folium.CircleMarker(
+                location=[row.geometry.y, row.geometry.x],
+                radius=8,
+                popup=folium.Popup(f"""
+                    <b>Produtividade:</b> {row[prod_column]:.2f} kg<br/>
+                    <b>SC/HA:</b> {row.get('produtividade_sc/ha', 0):.2f}<br/>
+                    <b>Lat:</b> {row.geometry.y:.6f}<br/>
+                    <b>Lon:</b> {row.geometry.x:.6f}
+                """, max_width=300),
+                tooltip=f"Produtividade: {row[prod_column]:.2f} kg",
+                color=color,
+                fillColor=color,
+                fillOpacity=0.7,
+                weight=2
+            ).add_to(m)
+    
+    # Adicionar controle de camadas
+    folium.LayerControl().add_to(m)
+    
+    return m
 
 if st.button("▶️ Processar dados"):
     with st.spinner("Processando…"):
@@ -323,7 +359,7 @@ if st.button("▶️ Processar dados"):
         col_train = processar_colecao(train_start, train_end, roi, cloud_train)
         col_pred  = processar_colecao(pred_start,  pred_end,  roi, cloud_pred)
 
-               gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
+        gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
         gdf_pred  = extrair_dados_min_mean_max(col_pred,  gdf_pts, TOKENS_IDX, buffer_m)
       
         feats_all = [f"{b}_{stat}" for b in TOKENS_IDX for stat in ["min","mean","max"]]
@@ -392,88 +428,40 @@ if st.button("▶️ Processar dados"):
         st.warning(f"Não foi possível calcular a média a partir do CSV: {e}")
 
     st.markdown("---")
-    st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista")
+    st.subheader("🗺️ Mapa Interativo de Variabilidade Espacial")
     
     try:
-        dfp = _read_csv_robusto(out_csv)
-        for col in ["produtividade_kg", "latitude", "longitude"]:
-            if col not in dfp.columns:
-                raise ValueError(f"Coluna ausente no CSV: {col}")
-        dfp["produtividade_kg"] = pd.to_numeric(dfp["produtividade_kg"], errors="coerce")
-        dfp["latitude"] = pd.to_numeric(dfp["latitude"], errors="coerce")
-        dfp["longitude"] = pd.to_numeric(dfp["longitude"], errors="coerce")
-        dfp = dfp.dropna(subset=["produtividade_kg","latitude","longitude"]).reset_index(drop=True)
-
-        gdf_points_ll = gpd.GeoDataFrame(
-            dfp,
-            geometry=gpd.points_from_xy(dfp["longitude"], dfp["latitude"]),
-            crs=4326
-        )
+        # Criar mapa interativo
+        interactive_map = create_interactive_map(gdf_pred, gdf_area)
+        
+        # Exibir mapa
+        st_folium(interactive_map, width=1200, height=600)
+        
+        # Legenda explicativa
+        st.info("""
+        **🎨 Legenda do Mapa:**
+        - **Área em preto**: Limite da área de estudo
+        - **Pontos coloridos**: Produtividade prevista (kg)
+          - Verde mais claro: Produtividade mais baixa
+          - Verde mais escuro: Produtividade mais alta
+        - **Clique nos pontos** para ver detalhes da produtividade
+        """)
+        
     except Exception as e:
-        st.error(f"Falha ao preparar dados de pontos para o mapa: {e}")
-        st.stop()
-    
-    epsg_utm = _auto_utm_epsg(gdf_area)
-    gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
-    gdf_points_utm = gdf_points_ll.to_crs(epsg=epsg_utm)
-    
-    xmin, ymin, xmax, ymax = gdf_area_utm.total_bounds
-    res = 5.0
-    xi = np.arange(xmin, xmax, res)
-    yi = np.arange(ymin, ymax, res)
-    xi_grid, yi_grid = np.meshgrid(xi, yi)
-    
-    xy = np.column_stack([gdf_points_utm.geometry.x.values, gdf_points_utm.geometry.y.values])
-    z  = gdf_points_utm["produtividade_kg"].astype(float).values
-    
-    if len(z) < 3:
-        st.warning("Pontos insuficientes para interpolação. É necessário ≥ 3 pontos.")
-    else:
+        st.error(f"Erro ao criar mapa interativo: {e}")
+        
+        # Fallback para visualização simples
+        st.warning("Exibindo visualização alternativa...")
         try:
-            rbf = Rbf(xy[:,0], xy[:,1], z, function="thin_plate")
-            zi = rbf(xi_grid, yi_grid)
-
-            # Máscara do polígono
-            poly_union = gdf_area_utm.geometry.unary_union
-            mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
-            zi_masked = np.full_like(zi, np.nan, dtype=float)
-            zi_masked[mask] = zi[mask]
-            
-            fig, ax = plt.subplots(figsize=(10, 8))
-                       
-            zi_plot = zi_masked.T
-            
-            img = ax.imshow(
-                zi_plot, 
-                extent=(xmin, xmax, ymin, ymax),
-                origin="lower", 
-                cmap="YlGn", 
-                aspect='auto'  
-            )
-            
-            gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
-            gdf_points_utm.plot(ax=ax, color="red", markersize=16)
-            cbar = plt.colorbar(img, ax=ax, shrink=0.75)
-            cbar.set_label("Produtividade Predita (kg)")
-            ax.set_title("Variabilidade Espacial da Produtividade Prevista")
-            ax.set_xlabel("UTM Easting (m)")
-            ax.set_ylabel("UTM Northing (m)")
+            fig, ax = plt.subplots(figsize=(12, 8))
+            gdf_area.boundary.plot(ax=ax, color='black', linewidth=2, label='Área de estudo')
+            scatter = gdf_pred.plot(ax=ax, c=gdf_pred['produtividade_kg'], 
+                                  cmap='YlGn', markersize=100, alpha=0.7,
+                                  legend=True, legend_kwds={'label': 'Produtividade (kg)'})
+            ax.set_title('Produtividade Prevista - Pontos Amostrais')
+            ax.set_xlabel('Longitude')
+            ax.set_ylabel('Latitude')
             plt.tight_layout()
-            st.pyplot(fig, use_container_width=True)
-           
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
-            st.download_button("🖼️ Baixar mapa (PNG)", data=buf.getvalue(),
-                            file_name=f"mapa_variabilidade_{ts}.png", mime="image/png")
-            
-        except Exception as e:
-            st.error(f"Erro na interpolação ou plotagem: {e}")            
-            fig, ax = plt.subplots(figsize=(10, 8))
-            gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
-            scatter = gdf_points_utm.plot(ax=ax, c=gdf_points_utm["produtividade_kg"], 
-                                        cmap="YlGn", markersize=50, alpha=0.7)
-            plt.colorbar(scatter.collections[0], ax=ax, shrink=0.75, label="Produtividade (kg)")
-            ax.set_title("Produtividade nos Pontos (fallback)")
-            ax.set_xlabel("UTM Easting (m)")
-            ax.set_ylabel("UTM Northing (m)")
-            st.pyplot(fig, use_container_width=True)
+            st.pyplot(fig)
+        except Exception as e2:
+            st.error(f"Erro também na visualização alternativa: {e2}")
