@@ -12,6 +12,17 @@ import joblib
 import warnings
 warnings.filterwarnings("ignore")
 
+import matplotlib.pyplot as plt
+from shapely.geometry import Polygon
+from shapely.prepared import prep
+from scipy.interpolate import Rbf
+
+try:
+    from pyproj import Transformer
+    HAVE_PYPROJ = True
+except Exception:
+    HAVE_PYPROJ = False
+
 # =========================
 # Página / estilo
 # =========================
@@ -85,26 +96,23 @@ def ensure_ee_init():
                 key_data=json.dumps(creds)
             )
             ee.Initialize(credentials); return
-        except Exception as e:
-            st.warning(f"Falha via secrets: {e}")
+        except Exception:
+            pass
     key_json = os.environ.get("GEE_SA_KEY_JSON", "")
     if key_json:
-        try:
-            creds = json.loads(key_json)
-            credentials = ee.ServiceAccountCredentials(
-                email=creds["client_email"],
-                key_data=key_json
-            )
-            ee.Initialize(credentials); return
-        except Exception as e:
-            st.warning(f"Falha via env: {e}")
+        creds = json.loads(key_json)
+        credentials = ee.ServiceAccountCredentials(
+            email=creds["client_email"],
+            key_data=key_json
+        )
+        ee.Initialize(credentials); return
     st.error("❌ Credenciais do Google Earth Engine não encontradas.")
     st.stop()
 
 ensure_ee_init()
 
 # =========================
-# CSV robusto (se/nquando precisar)
+# CSV robusto (se precisar)
 # =========================
 def _sniff_delim_and_decimal(sample_bytes: bytes):
     text = sample_bytes.decode("utf-8", errors="ignore")
@@ -147,7 +155,7 @@ def _read_csv_robusto(path: str) -> pd.DataFrame:
     return df
 
 # =========================
-# Carregar insumos
+# Área, pontos, modelo
 # =========================
 save_dir = _find_latest_save_dir()
 if not save_dir:
@@ -172,9 +180,6 @@ if os.path.exists(params_path):
 st.caption(f"📂 Origem: `{save_dir}`")
 st.caption(f"📍 Pontos: `{os.path.basename(pts_gpkg)}` | 🗺️ Área: `{os.path.basename(area_gpkg)}` | 🧠 Modelo: `{os.path.basename(model_path)}`")
 
-# =========================
-# Área e pontos
-# =========================
 gdf_area = gpd.read_file(area_gpkg)
 gdf_area = gdf_area.set_crs(4326) if gdf_area.crs is None else gdf_area.to_crs(4326)
 
@@ -187,7 +192,7 @@ roi = geemap.gdf_to_ee(gdf_area[["geometry"]])
 # Sidebar parâmetros
 # =========================
 st.sidebar.header("Parâmetros")
-bandas = TOKENS_IDX[:]  # mantém a mesma lista
+bandas = TOKENS_IDX[:]
 
 c1, c2 = st.sidebar.columns(2)
 train_start = c1.date_input("Treino: início", value=pd.to_datetime(params.get("data_inicio","2023-08-01")).date())
@@ -197,8 +202,8 @@ p1, p2 = st.sidebar.columns(2)
 pred_start = p1.date_input("Predição: início", value=pd.to_datetime(params.get("pred_inicio","2024-08-01")).date())
 pred_end   = p2.date_input("Predição: fim",    value=pd.to_datetime(params.get("pred_fim","2025-05-31")).date())
 
-cloud_train = int(params.get("cloud_thr", 5))     # do processamento
-buffer_m    = int(params.get("buffer_m", 5))      # do processamento
+cloud_train = int(params.get("cloud_thr", 5))
+buffer_m    = int(params.get("buffer_m", 5))
 cloud_pred  = st.sidebar.slider("Nuvens para PREDIÇÃO (%)", 0, 60, 20, 1)
 st.sidebar.caption(f"Treinamento usa os parâmetros do processamento: nuvens **{cloud_train}%**, buffer **{buffer_m} m**.")
 
@@ -268,67 +273,48 @@ def extrair_dados_min_mean_max(colecao, gdf_pontos, nomes_indices, buffer_m):
     return gdf_out
 
 # =========================
-# Funções utilitárias de modelo (NOVO alinhamento)
+# Utilitários de modelo
 # =========================
 def _load_model_bundle(path):
-    """Suporta .pkl como estimador OU bundle {'model', 'features', 'scaler'}."""
     obj = joblib.load(path)
     if isinstance(obj, dict):
-        model   = obj.get("model")
-        feats   = obj.get("features")
-        scaler  = obj.get("scaler")
-        return model, feats, scaler
-    else:
-        return obj, None, None
+        return obj.get("model"), obj.get("features"), obj.get("scaler")
+    return obj, None, None
 
 def _norm(s: str) -> str:
+    import unicodedata
     s = s.strip().lower().replace(" ", "_")
-    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")  # remove acento
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
     s = "".join(ch for ch in s if ch.isalnum() or ch in "._-")
-    s = s.replace("__", "_")
-    return s
+    return s.replace("__", "_")
 
-def _smart_align(Xdf: pd.DataFrame, expected: list[str]) -> tuple[pd.DataFrame, list[str], list[str], dict]:
-    """
-    Casa expected features com colunas de Xdf, de forma case-insensitive e sem acento.
-    Retorna: Xdf_alinhado, used_feats (na ordem esperada), missing_feats, mapping_dict
-    """
-    cols_map = {_norm(c): c for c in Xdf.columns}  # normalizado -> original
-    used = []
-    missing = []
-    mapping = {}
+def _smart_align(Xdf: pd.DataFrame, expected: list[str]):
+    cols_map = {_norm(c): c for c in Xdf.columns}
+    used, missing, mapping = [], [], {}
     for f in expected:
         nf = _norm(f)
         if nf in cols_map:
-            used.append(cols_map[nf])
-            mapping[f] = cols_map[nf]
+            used.append(cols_map[nf]); mapping[f] = cols_map[nf]
         else:
-            # fallback: 'ndvi' vira 'ndvi_mean' se existir só essa
             for stat in ["_mean","_min","_max"]:
                 alt = nf + stat
                 if alt in cols_map:
-                    used.append(cols_map[alt])
-                    mapping[f] = cols_map[alt]
-                    break
+                    used.append(cols_map[alt]); mapping[f] = cols_map[alt]; break
             else:
                 missing.append(f)
     if used:
         return Xdf[used].copy(), used, missing, mapping
-    # fallback final: usa todas as colunas *_min/_mean/_max disponíveis
     idx_cols = [c for c in Xdf.columns if any(tok.lower() in _norm(c) for tok in TOKENS_IDX)]
     fallback = sorted([c for c in idx_cols if any(s in c for s in ["_min","_mean","_max"])])
     if not fallback:
         return pd.DataFrame(), [], expected, {}
-    return Xdf[fallback].copy(), fallback, expected, {f:"<fallback>" for f in expected}
+    return Xdf[fallback].copy(), fallback, expected, {}
 
 def _expected_features_from(model, feats_bundle: list[str] | None, feats_all: list[str]) -> list[str]:
-    if feats_bundle and len(feats_bundle) > 0:
-        return list(feats_bundle)
+    if feats_bundle: return list(feats_bundle)
     if hasattr(model, "feature_names_in_"):
-        try:
-            return list(model.feature_names_in_)
-        except Exception:
-            pass
+        try: return list(model.feature_names_in_)
+        except Exception: pass
     return feats_all
 
 def _maybe_scale_fit_transform(scaler, X_train, X_pred):
@@ -340,9 +326,23 @@ def _maybe_scale_fit_transform(scaler, X_train, X_pred):
         return Xt, Xp
     except Exception:
         scaler.fit(X_train.values)
-        Xt = scaler.transform(X_train.values)
-        Xp = scaler.transform(X_pred.values)
-        return Xt, Xp
+        return scaler.transform(X_train.values), scaler.transform(X_pred.values)
+
+def _auto_utm_epsg(geom_gdf: gpd.GeoDataFrame) -> int:
+    if not HAVE_PYPROJ: return 32722
+    centroid = geom_gdf.geometry.unary_union.centroid
+    lon = float(centroid.x); lat = float(centroid.y)
+    zone = int((lon + 180) // 6) + 1
+    return int(f"{326 if lat >= 0 else 327}{zone:02d}")
+
+def _mask_array_with_polygon(xi_grid, yi_grid, poly_union):
+    prep_poly = prep(poly_union)
+    flat = np.c_[xi_grid.ravel(), yi_grid.ravel()]
+    mask = np.fromiter(
+        (prep_poly.contains(Polygon([(x,y),(x+0.1,y),(x+0.1,y+0.1),(x,y+0.1)]).centroid) for x,y in flat),
+        dtype=bool, count=flat.shape[0]
+    )
+    return mask.reshape(xi_grid.shape)
 
 # =========================
 # Executar
@@ -367,28 +367,17 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         if "maduro_kg" not in gdf_train.columns:
             st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento."); st.stop()
 
-        # 4) Carrega modelo salvo (bundle ou estimador)
+        # 4) Carregar modelo salvo
         modelo, feats_bundle, scaler = _load_model_bundle(model_path)
         if modelo is None or not hasattr(modelo, "fit"):
-            st.error("❌ Arquivo de modelo não contém um estimador válido em 'model'."); st.stop()
+            st.error("❌ Arquivo de modelo não contém um estimador válido."); st.stop()
 
-        # 5) Determina features esperadas e faz alinhamento inteligente
+        # 5) Alinhamento de features (sem exibir relatórios)
         feats_expected = _expected_features_from(modelo, feats_bundle, feats_all)
-        X_train_df, used_feats, missing_train, mapping = _smart_align(gdf_train, feats_expected)
-        X_pred_df,  _,          missing_pred, _       = _smart_align(gdf_pred,  used_feats)
-
+        X_train_df, used_feats, _, _ = _smart_align(gdf_train, feats_expected)
+        X_pred_df,  _,          _, _ = _smart_align(gdf_pred,  used_feats)
         if X_train_df.empty or X_pred_df.empty:
-            st.error("❌ Nenhuma feature disponível para o modelo após o alinhamento (mesmo com fallback).")
-            st.stop()
-
-        # Relatório de mapeamento (transparência)
-        if mapping:
-            st.info("Mapeamento de features aplicado (modelo → coluna do dataset):\n"
-                    + "\n".join([f"- {k} → {v}" for k,v in mapping.items()]))
-        if missing_train:
-            st.warning("Colunas esperadas ausentes no treino: " + ", ".join(missing_train))
-        if missing_pred:
-            st.warning("Colunas esperadas ausentes na predição: " + ", ".join(missing_pred))
+            st.error("❌ Nenhuma feature disponível para o modelo após o alinhamento."); st.stop()
 
         # 6) Escalonar (se houver scaler)
         X_train_mat, X_pred_mat = _maybe_scale_fit_transform(scaler, X_train_df, X_pred_df)
@@ -400,9 +389,13 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
         modelo.fit(X_train_mat, y)
         yhat = modelo.predict(X_pred_mat)
 
-        # 9) Salvar resultados — conversão igual à usada anteriormente
+        # 9) Predição + conversão e colunas lat/lon
         gdf_pred["produtividade_kg"] = yhat
         gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (1/60) * (1/0.0016)
+        if "latitude" not in gdf_pred.columns and "geometry" in gdf_pred.columns:
+            gdf_pred["latitude"] = gdf_pred.geometry.y
+        if "longitude" not in gdf_pred.columns and "geometry" in gdf_pred.columns:
+            gdf_pred["longitude"] = gdf_pred.geometry.x
 
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_csv = os.path.join(save_dir, f"predicao_sem_datas_{ts}.csv")
@@ -418,17 +411,104 @@ if st.button("▶️ Reprocessar índices no GEE e prever"):
             "buffer_m": buffer_m,
             "modelo_usado": os.path.basename(model_path),
             "features_usadas": used_feats,
-            "missing_train_cols": missing_train,
-            "missing_pred_cols": missing_pred,
         }
         out_meta = os.path.join(save_dir, f"predicao_params_{ts}.json")
         with open(out_meta, "w") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
     st.success("✅ Predição concluída e arquivos salvos!")
-    st.caption(f"CSV: `{out_csv}`")
+    st.caption(f"CSV de predição: `{out_csv}`")
     st.caption(f"JSON (parâmetros): `{out_meta}`")
     st.download_button("📥 Baixar CSV de predição", data=open(out_csv,"rb").read(),
                        file_name=os.path.basename(out_csv), mime="text/csv")
     st.download_button("📥 Baixar JSON de parâmetros", data=open(out_meta,"rb").read(),
                        file_name=os.path.basename(out_meta), mime="application/json")
+
+    # =========================
+    # Resultado principal: MÉDIA em sacas/ha
+    # =========================
+    try:
+        df_pred_csv = _read_csv_robusto(out_csv)
+        if "produtividade_sc/ha" in df_pred_csv.columns:
+            media_sc_ha = pd.to_numeric(df_pred_csv["produtividade_sc/ha"], errors="coerce").mean()
+            st.markdown("### 📌 Produtividade média prevista (safra)")
+            st.metric("Média (sacas/ha)", f"{media_sc_ha:.2f}")
+        else:
+            st.warning("Coluna 'produtividade_sc/ha' não encontrada no CSV de predição.")
+    except Exception as e:
+        st.warning(f"Não foi possível calcular a média a partir do CSV: {e}")
+
+    # =========================
+    # Mapa de variabilidade (RBF) com produtividade_kg + lat/lon
+    # =========================
+    st.markdown("---")
+    st.subheader("🗺️ Mapa de variabilidade espacial da produtividade prevista")
+
+    # Reconstrói GeoDataFrame com lat/lon do CSV para garantir consistência
+    try:
+        dfp = _read_csv_robusto(out_csv)
+        for col in ["produtividade_kg", "latitude", "longitude"]:
+            if col not in dfp.columns:
+                raise ValueError(f"Coluna ausente no CSV: {col}")
+        dfp["produtividade_kg"] = pd.to_numeric(dfp["produtividade_kg"], errors="coerce")
+        dfp["latitude"] = pd.to_numeric(dfp["latitude"], errors="coerce")
+        dfp["longitude"] = pd.to_numeric(dfp["longitude"], errors="coerce")
+        dfp = dfp.dropna(subset=["produtividade_kg","latitude","longitude"]).reset_index(drop=True)
+
+        gdf_points_ll = gpd.GeoDataFrame(
+            dfp,
+            geometry=gpd.points_from_xy(dfp["longitude"], dfp["latitude"]),
+            crs=4326
+        )
+    except Exception as e:
+        st.error(f"Falha ao preparar dados de pontos para o mapa: {e}")
+        st.stop()
+
+    # Define UTM adequado
+    epsg_utm = _auto_utm_epsg(gdf_area)
+    gdf_area_utm = gdf_area.to_crs(epsg=epsg_utm)
+    gdf_points_utm = gdf_points_ll.to_crs(epsg=epsg_utm)
+
+    # Grade (5 m)
+    xmin, ymin, xmax, ymax = gdf_area_utm.total_bounds
+    res = 5.0
+    xi = np.arange(xmin, xmax, res)
+    yi = np.arange(ymin, ymax, res)
+    xi_grid, yi_grid = np.meshgrid(xi, yi)
+
+    # Interpolação RBF (thin-plate)
+    xy = np.column_stack([gdf_points_utm.geometry.x.values, gdf_points_utm.geometry.y.values])
+    z  = gdf_points_utm["produtividade_kg"].astype(float).values
+    if len(z) < 3:
+        st.warning("Pontos insuficientes para interpolação. É necessário ≥ 3 pontos.")
+    else:
+        rbf = Rbf(xy[:,0], xy[:,1], z, function="thin_plate")
+        zi = rbf(xi_grid, yi_grid)
+
+        # Máscara do polígono
+        poly_union = gdf_area_utm.geometry.unary_union
+        mask = _mask_array_with_polygon(xi_grid, yi_grid, poly_union)
+        zi_masked = np.full_like(zi, np.nan, dtype=float)
+        zi_masked[mask] = zi[mask]
+
+        # Plot
+        fig, ax = plt.subplots(figsize=(10, 8))
+        img = ax.imshow(
+            zi_masked, extent=(xmin, xmax, ymin, ymax),
+            origin="lower", cmap="YlGn", interpolation="nearest"
+        )
+        gdf_area_utm.boundary.plot(ax=ax, color="black", linewidth=1)
+        gdf_points_utm.plot(ax=ax, color="red", markersize=16)
+        cbar = plt.colorbar(img, ax=ax, shrink=0.75)
+        cbar.set_label("Produtividade Predita (kg)")
+        ax.set_title(f"Variabilidade Espacial — Spline (RBF) | EPSG:{epsg_utm}")
+        ax.set_xlabel("UTM Easting (m)")
+        ax.set_ylabel("UTM Northing (m)")
+        plt.tight_layout()
+        st.pyplot(fig, use_container_width=True)
+
+        # Download da figura
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
+        st.download_button("🖼️ Baixar mapa (PNG)", data=buf.getvalue(),
+                           file_name=f"mapa_variabilidade_{ts}.png", mime="image/png")
