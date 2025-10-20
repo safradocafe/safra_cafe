@@ -324,51 +324,52 @@ def adicionar_ponto(lat, lon, metodo):
     st.success(f"Ponto {len(st.session_state.gdf_pontos)} adicionado ({metodo})")
 
 def inserir_produtividade():
-    """
-    Editor simples para inserir apenas o VALOR por ponto.
-    A unidade é a definida globalmente em st.session_state.unidade_selecionada.
-    Converte automaticamente para 'maduro_kg' ao salvar.
-    """
-    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
+    gdf = st.session_state.get("gdf_pontos")
+    if gdf is None or gdf.empty:
         st.warning("Nenhum ponto disponível!")
         return
 
-    unidade = st.session_state.unidade_selecionada or 'kg'
-    with st.expander(f"Editar dados de produtividade — unidade atual: {unidade}", expanded=True):
-        # Tabela editável: só 'valor' é editável; demais colunas ficam bloqueadas
-        df_edit = st.session_state.gdf_pontos[["Code", "latitude", "longitude", "valor"]].copy()
+    unidade = st.session_state.unidade_selecionada or "kg"
 
-        edited = st.data_editor(
-            df_edit,
-            hide_index=True,
-            use_container_width=True,
-            num_rows="fixed",
-            column_config={
-                "Code": st.column_config.TextColumn("Ponto", disabled=True),
-                "latitude": st.column_config.NumberColumn("Latitude", disabled=True, format="%.6f"),
-                "longitude": st.column_config.NumberColumn("Longitude", disabled=True, format="%.6f"),
-                "valor": st.column_config.NumberColumn("Valor", help=f"Informe o valor na unidade {unidade}", step=0.01, format="%.2f"),
-            },
-            key="editor_produtividade",
-        )
+    st.markdown(f"**Inserir produtividade** — unidade atual: `{unidade}`")
 
-        col_a, col_b = st.columns([1, 2])
-        with col_a:
-            if st.button("Salvar alterações", type="primary"):
-                # Atualiza 'valor' e recalcula 'maduro_kg' com base na unidade global
-                st.session_state.gdf_pontos["valor"] = pd.to_numeric(edited["valor"], errors="coerce").fillna(0.0)
+    # Inicializa valores no session_state para manter edição estável
+    for idx, row in gdf.iterrows():
+        key = f"valor_pt_{idx}"
+        if key not in st.session_state:
+            st.session_state[key] = float(row.get("valor", 0.0) or 0.0)
 
-                # Converte para kg segundo a unidade escolhida globalmente
-                st.session_state.gdf_pontos["maduro_kg"] = st.session_state.gdf_pontos["valor"].apply(
-                    lambda v: converter_para_kg(v, unidade)
+    # Formulário evita recarregamento prematuro e salva com Enter
+    with st.form("form_produtividade", clear_on_submit=False):
+        # grade simples para reduzir altura: 3 colunas
+        ncols = 3
+        cols = st.columns(ncols)
+        for idx, _ in gdf.iterrows():
+            col = cols[idx % ncols]
+            with col:
+                st.number_input(
+                    f"Ponto {idx+1}",
+                    key=f"valor_pt_{idx}",
+                    min_value=0.0,
+                    step=0.01,
+                    format="%.2f"
                 )
 
-                st.success("Dados de produtividade atualizados.")
-                st.rerun()
+        submitted = st.form_submit_button("Salvar produtividade", type="primary")
 
-        with col_b:
-            st.caption("Dica: a unidade é definida no seletor **Produtividade → Unidade**. "
-                       "Altere a unidade ali, se necessário, e salve novamente para recalcular em kg.")
+    if submitted:
+        # Atualiza a coluna 'valor' a partir do estado do formulário
+        for idx in gdf.index:
+            gdf.at[idx, "valor"] = float(st.session_state.get(f"valor_pt_{idx}", 0.0))
+
+        # Converte para kg conforme a unidade global
+        gdf["maduro_kg"] = pd.to_numeric(
+            gdf["valor"].apply(lambda v: converter_para_kg(v, unidade)),
+            errors="coerce"
+        ).fillna(0.0)
+
+        st.session_state.gdf_pontos = gdf
+        st.success("Produtividades salvas e convertidas para kg.")
 
 def salvar_no_streamlit_cloud():
     if st.session_state.get("gdf_poligono") is None:
