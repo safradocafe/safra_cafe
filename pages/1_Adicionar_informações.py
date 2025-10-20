@@ -17,14 +17,16 @@ from io import BytesIO
 # ---- Estilo / CSS ----
 st.markdown("""
     <style>
-    .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; }
+    .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; margin-top: -2rem !important; }
     header, footer {visibility: hidden;}
+    div[data-testid="stVerticalBlock"] { gap: 0.1rem !important; }
+    section.main > div:first-child { padding-top: 0.5rem !important; }
 
     /* Reduz espaçamentos verticais gerais */
-    .stMarkdown, .stButton, .stNumberInput, .stSelectbox, .stFileUploader { margin: 0.2rem 0 !important; }
+    .stMarkdown, .stButton, .stNumberInput, .stSelectbox, .stFileUploader { margin: 0.1rem 0 !important; }
 
     /* Reduz o espaço logo abaixo do iframe do mapa */
-    .streamlit-folium, .streamlit-folium iframe { margin-bottom: 0.2rem !important; }
+    .streamlit-folium, .streamlit-folium iframe { margin-bottom: 0rem !important; padding-bottom: 0rem !important; }
 
     /* File uploader PT-BR e compacto */
     div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
@@ -32,7 +34,7 @@ st.markdown("""
         background: #fafafa !important;
         padding: 6px 8px !important;
         min-height: 60px !important;
-        margin: 0.2rem 0 !important;
+        margin: 0.1rem 0 !important;
     }
     div[data-testid="stFileUploaderDropzone"] small, 
     div[data-testid="stFileUploaderDropzone"] span { display: none !important; }
@@ -41,8 +43,8 @@ st.markdown("""
         display: block; color: #444; font-size: 11px; text-align: center; padding-top: 4px;
     }
 
-    .sub-mini { font-size: 11px !important; font-weight: 600; margin: 4px 0 2px 0 !important; padding: 0 !important; }
-    .controls-title { font-size: 12px !important; font-weight: 700; margin: 6px 0 4px 0 !important; padding: 0 !important; }
+    .sub-mini { font-size: 11px !important; font-weight: 600; margin: 2px 0 1px 0 !important; padding: 0 !important; }
+    .controls-title { font-size: 12px !important; font-weight: 700; margin: 2px 0 1px 0 !important; padding: 0 !important; }
     .controls-group label { font-size: 11px !important; }
     .controls-group .stButton>button { padding: 2px 8px !important; font-size: 11px !important; margin: 1px 0 !important; }
     .stNumberInput input, .stSelectbox select { padding: 2px 8px !important; min-height: 30px !important; }
@@ -422,10 +424,10 @@ def salvar_no_streamlit_cloud():
 # =======================
 
 # Mapa de visualização (estável na área amostral)
-st.markdown("<h4 style='margin-bottom:4px'>Mapa de visualização</h4>", unsafe_allow_html=True)
+st.markdown("<h4 style='margin-bottom:0px; padding-bottom:0px'>Mapa de visualização</h4>", unsafe_allow_html=True)
 mapa = create_map()
 # a classe 'streamlit-folium' é injetada pelo pacote; o CSS acima reduz o espaço depois do mapa
-mapa_data = st_folium(mapa, width=900, height=520, key='mapa_principal')
+mapa_data = st_folium(mapa, width=900, height=500, key='mapa_principal')
 
 # Captura desenho no mapa
 if mapa_data and mapa_data.get('last_active_drawing'):
@@ -440,7 +442,7 @@ if mapa_data and mapa_data.get('last_active_drawing'):
         st.rerun()
 
 # Controles (abaixo do mapa), compactos
-st.markdown('<div class="controls-title">Controles</div>', unsafe_allow_html=True)
+st.markdown('<div class="controls-title" style="margin-top:0px; padding-top:0px">Controles</div>', unsafe_allow_html=True)
 with st.container():
     st.markdown('<div class="controls-group">', unsafe_allow_html=True)
 
