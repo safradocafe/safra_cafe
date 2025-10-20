@@ -9,17 +9,11 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-# =========================
-# Página e cabeçalho
-# =========================
 st.set_page_config(page_title="Processamento de dados", layout="wide")
+st.title("Processamento de dados") 
 st.caption("Seleciona Sentinel-2, calcula índices espectrais e extrai **mínimo, média e máximo** em **buffer** ao redor de **cada ponto** para **cada data**.")
-
 BASE_TMP = "/tmp/streamlit_dados"
 
-# =========================
-# Utilitários
-# =========================
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base): return None
     cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
@@ -33,7 +27,6 @@ def load_cloud_inputs():
     if not latest:
         return None, None, None
 
-    # aceitamos 'area_amostral.gpkg' OU 'area_poligono.gpkg'
     poly_candidates = [
         os.path.join(latest, "area_amostral.gpkg"),
         os.path.join(latest, "area_poligono.gpkg"),
@@ -47,7 +40,6 @@ def load_cloud_inputs():
     gdf_poly = gpd.read_file(poly_path)
     gdf_pts  = gpd.read_file(pts_path)
 
-    # CRS -> WGS84
     if gdf_poly.crs is None or gdf_poly.crs.to_epsg() != 4326:
         gdf_poly = gdf_poly.set_crs(4326) if gdf_poly.crs is None else gdf_poly.to_crs(4326)
     if gdf_pts.crs is None or gdf_pts.crs.to_epsg() != 4326:
@@ -82,9 +74,6 @@ def ensure_ee_init():
 
 ensure_ee_init()
 
-# =========================
-# Sidebar – parâmetros
-# =========================
 with st.sidebar:
     st.subheader("Configurações")
     start = st.date_input("Início", value=date(2024,1,1))
@@ -99,9 +88,6 @@ with st.sidebar:
     )
     btn = st.button("▶️ Executar processamento")
 
-# =========================
-# Carrega insumos
-# =========================
 gdf_poly, gdf_pts, latest_dir = load_cloud_inputs()
 if gdf_poly is None or gdf_pts is None:
     st.warning("⚠️ Não encontrei os arquivos do passo 1 em `/tmp/streamlit_dados`. Volte em **Adicionar informações** e salve novamente.")
@@ -113,9 +99,6 @@ st.write(f"**Polígono**: {len(gdf_poly)} geom | **Pontos**: {len(gdf_pts)} | Ex
 sample_cols = [c for c in gdf_pts.columns if c != "geometry"]
 st.dataframe(gdf_pts[sample_cols].head(), use_container_width=True)
 
-# =========================
-# Funções EE
-# =========================
 def mask_s2_sr(img):
     """Máscara por QA60 (nuvem/cirrus)."""
     qa = img.select('QA60')
@@ -182,9 +165,6 @@ def list_dates(geom, start_d, end_d, cloud_limit):
              .getInfo())
     return sorted(list(set(dates)))
 
-# =========================
-# Processamento principal
-# =========================
 def process_all():
     ee_poly = geemap.gdf_to_ee(gdf_poly[["geometry"]])
     ee_pts  = geemap.gdf_to_ee(gdf_pts[["Code", "geometry"]])
@@ -194,17 +174,16 @@ def process_all():
         st.warning("Nenhuma data encontrada no período/limite de nuvens.")
         st.stop()
 
-    # Buffer nos pontos mantendo propriedades
+   
     def _buf(f):
         return ee.Feature(f.geometry().buffer(buffer_m)).copyProperties(f)
     ee_pts_buf = ee_pts.map(_buf)
-
-    # Redutor: min + mean + max
+    
     reducer = (ee.Reducer.min()
                .combine(ee.Reducer.mean(), sharedInputs=True)
                .combine(ee.Reducer.max(),  sharedInputs=True))
 
-    # Estrutura de acumulador por ponto
+    
     base_out = gdf_pts[["Code"]].copy()
     base_out.index = base_out["Code"].astype(str)
     props_dict = {str(k): {} for k in base_out.index}
@@ -214,9 +193,9 @@ def process_all():
     for i, d in enumerate(dates, start=1):
         prog.progress(i/len(dates), text=f"Processando {d} ({i}/{len(dates)})")
         img = best_image_on_date(ee_poly.geometry(), d, cloud_thr, indices_sel)
-        img_idx = img.select(indices_sel)  # bandas de índices
+        img_idx = img.select(indices_sel) 
 
-        # Reduz para TODOS os buffers de uma vez
+        
         feats_fc = img_idx.reduceRegions(
             collection=ee_pts_buf,
             reducer=reducer,
@@ -224,10 +203,8 @@ def process_all():
             tileScale=2
         )
 
-        # Obtém lista de features com propriedades (sem geometria) para reduzir payload
         feats = ee.FeatureCollection(feats_fc).getInfo().get("features", [])
-
-        # Coleta resultados por ponto
+        
         for f in feats:
             p = f.get("properties", {})
             code = str(p.get("Code"))
@@ -243,8 +220,7 @@ def process_all():
                 props_dict[code][f"{d}_{idx}_max"]  = float(vmax)  if vmax  is not None else np.nan
 
     prog.empty()
-
-    # Monta GeoDataFrame final (um registro por ponto, colunas por data/índice/estatística)
+    
     gdf_out = gdf_pts.copy()
     gdf_out.index = gdf_out["Code"].astype(str)
     for code, kv in props_dict.items():
@@ -252,20 +228,15 @@ def process_all():
             gdf_out.loc[code, col] = val
     gdf_out.reset_index(drop=True, inplace=True)
 
-    # Salva no /tmp (na pasta do último salvamento)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_gpkg = os.path.join(latest_dir, f"indices_espectrais_pontos_{ts}.gpkg")
     out_csv  = os.path.join(latest_dir, f"indices_espectrais_pontos_{ts}.csv")
     gdf_out.to_file(out_gpkg, driver="GPKG")
     gdf_out.drop(columns=["geometry"]).to_csv(out_csv, index=False)
-
-    # Guarda em sessão
+    
     st.session_state["proc_result_gdf"] = gdf_out
     st.session_state["proc_paths"] = {"gpkg": out_gpkg, "csv": out_csv, "dates": dates}
 
-# =========================
-# Rodar
-# =========================
 if btn:
     with st.spinner("Processando (pode levar alguns minutos)…"):
         try:
@@ -274,9 +245,6 @@ if btn:
         except Exception as e:
             st.error(f"Erro no processamento: {e}")
 
-# =========================
-# Exibição / Download
-# =========================
 gdf_out = st.session_state.get("proc_result_gdf")
 paths   = st.session_state.get("proc_paths")
 
@@ -287,8 +255,6 @@ if gdf_out is not None:
 
     csv_bytes = gdf_out.drop(columns=["geometry"]).to_csv(index=False).encode("utf-8")
     st.download_button("📥 Baixar CSV completo", csv_bytes, file_name="indices_espectrais_pontos.csv", mime="text/csv")
-
-    # REMOVIDO: Mensagem dos caminhos dos arquivos salvos
 
     with st.expander("ℹ️ Metadados do processamento"):
         st.write({
