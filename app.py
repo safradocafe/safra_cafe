@@ -8,7 +8,7 @@ st.set_page_config(
 )
 
 st.title("☕ Safra do Café")
-st.caption("Sistema avançado de geotecnologias para **Cafeicultura de Precisão**")
+st.caption("Sistema avançado de geotecnologias para Cafeicultura de Precisão")
 
 st.markdown(
     """
