@@ -49,7 +49,7 @@ st.markdown(
 
 Caso não tenha esses dados para teste do sistema, você pode baixá-los neste link: [https://drive.google.com/drive/folders/1h5hSdq3PXXxKoX8NEpqH1qGoT59RjoG6?usp=drive_link](https://drive.google.com/drive/folders/1h5hSdq3PXXxKoX8NEpqH1qGoT59RjoG6?usp=drive_link)
 
-**Observação:** esses dados foram utilizados na pesquisa do mestrado e devem ser utulizados conforme a metodologia proposta. Eles são relativos à safra de café de 2024. A seleção de imagens de satélite para processamento dos dados deve ter como início 01/08/2023 e fim 31/05/2024. Caso utilize dados da sua fazenda, eles devem estar no formato .gpkg. Você pode nomeá-los como quiser. É possível também inserir os dados de forma manual no sistema.
+**Observação:** esses dados são da pesquisa no mestrado e devem ser utulizados conforme a metodologia proposta. Eles são relativos à safra de café de 2024. A seleção de imagens de satélite para processamento dos dados deve ter como início 01/08/2023 e fim 31/05/2024. Caso utilize dados da sua fazenda, os arquivos devem estar no formato .gpkg. Você pode nomeá-los como quiser. É possível também inserir os dados de forma manual no sistema.
 
 **Dica:** siga a ordem das abas para um fluxo completo, iniciando por **Adicionar informações** e finalizando em **Previsão da safra**.
 """
