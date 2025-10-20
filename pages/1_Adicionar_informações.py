@@ -324,34 +324,51 @@ def adicionar_ponto(lat, lon, metodo):
     st.success(f"Ponto {len(st.session_state.gdf_pontos)} adicionado ({metodo})")
 
 def inserir_produtividade():
+    """
+    Editor simples para inserir apenas o VALOR por ponto.
+    A unidade é a definida globalmente em st.session_state.unidade_selecionada.
+    Converte automaticamente para 'maduro_kg' ao salvar.
+    """
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.warning("Nenhum ponto disponível!")
         return
 
-    with st.expander("Editar dados de produtividade"):
-        for idx, row in st.session_state.gdf_pontos.iterrows():
-            cols = st.columns([1, 3, 3, 2])
-            with cols[0]:
-                st.write(f"**Ponto {idx+1}**")
-                st.write(f"Lat: {row['latitude']:.5f}")
-                st.write(f"Lon: {row['longitude']:.5f}")
-            with cols[1]:
-                novo_valor = st.number_input("Valor", value=float(row['valor']), key=f"valor_{idx}")
-            with cols[2]:
-                nova_unidade = st.selectbox("Unidade", ['kg', 'latas', 'litros'],
-                                            index=['kg', 'latas', 'litros'].index(row['unidade']),
-                                            key=f"unidade_{idx}")
-            with cols[3]:
-                coletado = st.checkbox("Coletado", value=row['coletado'], key=f"coletado_{idx}")
+    unidade = st.session_state.unidade_selecionada or 'kg'
+    with st.expander(f"Editar dados de produtividade — unidade atual: {unidade}", expanded=True):
+        # Tabela editável: só 'valor' é editável; demais colunas ficam bloqueadas
+        df_edit = st.session_state.gdf_pontos[["Code", "latitude", "longitude", "valor"]].copy()
 
-            st.session_state.gdf_pontos.at[idx, 'valor'] = novo_valor
-            st.session_state.gdf_pontos.at[idx, 'unidade'] = nova_unidade
-            st.session_state.gdf_pontos.at[idx, 'coletado'] = coletado
-            st.session_state.gdf_pontos.at[idx, 'maduro_kg'] = converter_para_kg(novo_valor, nova_unidade)
+        edited = st.data_editor(
+            df_edit,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "Code": st.column_config.TextColumn("Ponto", disabled=True),
+                "latitude": st.column_config.NumberColumn("Latitude", disabled=True, format="%.6f"),
+                "longitude": st.column_config.NumberColumn("Longitude", disabled=True, format="%.6f"),
+                "valor": st.column_config.NumberColumn("Valor", help=f"Informe o valor na unidade {unidade}", step=0.01, format="%.2f"),
+            },
+            key="editor_produtividade",
+        )
 
-        if st.button("Salvar alterações"):
-            st.success("Dados de produtividade atualizados.")
-            st.rerun()
+        col_a, col_b = st.columns([1, 2])
+        with col_a:
+            if st.button("Salvar alterações", type="primary"):
+                # Atualiza 'valor' e recalcula 'maduro_kg' com base na unidade global
+                st.session_state.gdf_pontos["valor"] = pd.to_numeric(edited["valor"], errors="coerce").fillna(0.0)
+
+                # Converte para kg segundo a unidade escolhida globalmente
+                st.session_state.gdf_pontos["maduro_kg"] = st.session_state.gdf_pontos["valor"].apply(
+                    lambda v: converter_para_kg(v, unidade)
+                )
+
+                st.success("Dados de produtividade atualizados.")
+                st.rerun()
+
+        with col_b:
+            st.caption("Dica: a unidade é definida no seletor **Produtividade → Unidade**. "
+                       "Altere a unidade ali, se necessário, e salve novamente para recalcular em kg.")
 
 def salvar_no_streamlit_cloud():
     if st.session_state.get("gdf_poligono") is None:
