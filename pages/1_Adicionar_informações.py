@@ -25,9 +25,6 @@ st.markdown("""
     /* Reduz espaçamentos verticais gerais */
     .stMarkdown, .stButton, .stNumberInput, .stSelectbox, .stFileUploader { margin: 0.1rem 0 !important; }
 
-    /* Reduz o espaço logo abaixo do iframe do mapa */
-    .streamlit-folium, .streamlit-folium iframe { margin-bottom: 0rem !important; padding-bottom: 0rem !important; }
-
     /* File uploader PT-BR e compacto */
     div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
         border: 1px dashed #999 !important;
@@ -48,9 +45,14 @@ st.markdown("""
     .controls-group label { font-size: 11px !important; }
     .controls-group .stButton>button { padding: 2px 8px !important; font-size: 11px !important; margin: 1px 0 !important; }
     .stNumberInput input, .stSelectbox select { padding: 2px 8px !important; min-height: 30px !important; }
-    
-    /* Espaço específico após o título do mapa */
-    .map-title-container { margin-bottom: 8px !important; display: block; }
+
+    /* Mantém controles do Leaflet sempre visíveis acima do iframe */
+    .leaflet-control { z-index: 1000 !important; }
+    .leaflet-top.leaflet-right { top: 12px !important; right: 12px !important; } /* posição do LayerControl */
+    .leaflet-top.leaflet-left { top: 12px !important; left: 12px !important; }  /* barra de desenho */
+
+    /* Evita overflow/clipping dentro do controle de camadas */
+    .leaflet-control-layers-expanded { max-height: 260px; overflow:auto; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -93,11 +95,7 @@ def _fit_bounds_from_gdf(gdf):
     return [[b[1], b[0]], [b[3], b[2]]]
 
 def create_map():
-    """
-    Mantém o enquadramento estável na área amostral e exibe as opções
-    de base 'Mapa (ruas)' e 'Satélite' no controle de camadas.
-    """
-    # cria o mapa sem camada base padrão para podermos controlar as bases
+    # mapa sem base padrão; adicionamos bases depois
     if st.session_state.gdf_poligono is not None:
         m = folium.Map(location=[0, 0], zoom_start=2, tiles=None, control_scale=True)
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
@@ -106,7 +104,7 @@ def create_map():
     else:
         m = folium.Map(location=[-15, -55], zoom_start=4, tiles=None, control_scale=True)
 
-    # bases: ruas e satélite
+    # bases
     folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True).add_to(m)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -124,7 +122,7 @@ def create_map():
     )
     draw.add_to(m)
 
-    # área amostral
+    # área/pontos
     if st.session_state.gdf_poligono is not None:
         folium.GeoJson(
             st.session_state.gdf_poligono,
@@ -136,7 +134,6 @@ def create_map():
         except Exception:
             pass
 
-    # pontos
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
@@ -145,7 +142,6 @@ def create_map():
                 popup=f"Ponto: {row['Code']}<br>Produtividade: {row['maduro_kg']}"
             ).add_to(m)
 
-    # controle de camadas visível
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
     return m
 
@@ -423,14 +419,11 @@ def salvar_no_streamlit_cloud():
     st.success("✅ Dados salvos na nuvem para uso nas próximas etapas.")
 
 # =======================
-# ---- LAYOUT EM UMA COLUNA: MAPA primeiro, CONTROLES depois
+# LAYOUT: título acima do mapa e mapa fluido
 # =======================
-
-# Mapa de visualização (estável na área amostral)
-st.markdown("<div class='map-title-container'><h4 style='margin-bottom:0px; padding-bottom:0px'>Mapa de visualização</h4></div>", unsafe_allow_html=True)
+st.subheader("Mapa de visualização")
 mapa = create_map()
-# a classe 'streamlit-folium' é injetada pelo pacote; o CSS acima reduz o espaço depois do mapa
-mapa_data = st_folium(mapa, width=900, height=500, key='mapa_principal')
+mapa_data = st_folium(mapa, use_container_width=True, height=500, key='mapa_principal')
 
 # Captura desenho no mapa
 if mapa_data and mapa_data.get('last_active_drawing'):
