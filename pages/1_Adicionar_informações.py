@@ -421,7 +421,7 @@ def salvar_no_streamlit_cloud():
 # =======================
 # LAYOUT: título acima do mapa e mapa fluido
 # =======================
-st.subheader("Mapa de visualização")
+st.subheader("Adicionar informações: área amostral e pontos de produtividade")
 mapa = create_map()
 mapa_data = st_folium(mapa, use_container_width=True, height=500, key='mapa_principal')
 
