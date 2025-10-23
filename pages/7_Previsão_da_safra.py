@@ -27,7 +27,7 @@ try:
     HAVE_PYPROJ = True
 except Exception:
     HAVE_PYPROJ = False
-
+import base64
 st.set_page_config(layout="wide", page_title="Previsão de Safra")
 st.markdown("## ☕ Saiba a sua próxima safra")
 st.caption(
