@@ -32,7 +32,7 @@ st.set_page_config(layout="wide", page_title="Previsão de Safra")
 st.markdown("## ☕ Saiba a sua próxima safra")
 st.caption(
     "Recalcula índices no GEE para **treinamento** (safra passada) e **predição** (safra futura) "
-    "usando o polígono e os pontos salvos na nuvem. Em seguida aplica o **melhor modelo salvo**."
+    "usando o polígono e os pontos salvos na nuvem. Em seguida, aplica o **melhor modelo salvo**."
 )
 
 BASE_TMP = "/tmp/streamlit_dados"
