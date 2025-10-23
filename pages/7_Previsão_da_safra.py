@@ -2,7 +2,8 @@ import os, glob, json, io, csv, unicodedata
 from datetime import datetime 
 import ee 
 import geemap 
-import folium 
+import folium
+import base64
 import pandas as pd 
 import geopandas as gpd 
 import numpy as np 
@@ -372,74 +373,82 @@ def _maybe_scale_fit_transform(scaler, X_train, X_pred):
         scaler.fit(X_train.values)
         return scaler.transform(X_train.values), scaler.transform(X_pred.values)
 
-def create_interactive_map(gdf_points, gdf_area, prod_column="produtividade_kg", method_key='spline', grid_res_m=5, cmap_name='YlGn', show_points=True, show_area=True):
+def create_interactive_map(
+    gdf_points, gdf_area, prod_column="produtividade_kg",
+    method_key='spline', grid_res_m=5, cmap_name='YlGn',
+    show_points=True, show_area=True
+):
     """Cria mapa interativo com interpolação da produtividade"""
+
     # Centro do mapa
     centroid = gdf_area.geometry.unary_union.centroid
     start_loc = [centroid.y, centroid.x]
-    
+
     # Projeta para UTM (metros)
     epsg_utm = get_local_utm_epsg(centroid.x, centroid.y)
     area_utm = gdf_area.to_crs(epsg=epsg_utm)
     pontos_utm = gdf_points.to_crs(epsg=epsg_utm)
-    
+
     # Bounds e grid
     xmin, ymin, xmax, ymax = area_utm.total_bounds
     pad = grid_res_m * 2
     xmin, ymin, xmax, ymax = xmin - pad, ymin - pad, xmax + pad, ymax + pad
+
     xi = np.arange(xmin, xmax, grid_res_m)
     yi = np.arange(ymin, ymax, grid_res_m)
     xi_grid, yi_grid = np.meshgrid(xi, yi)
-    
+
     # Dados para interpolação
     vals = pontos_utm[prod_column].astype(float).values
     xyz = np.c_[pontos_utm.geometry.x, pontos_utm.geometry.y, vals]
-    
+
     # Interpolação
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         Z = METHODS[method_key]['function'](xyz, xi_grid, yi_grid)
-    
+
     # Máscara fora do polígono
     poly = unary_union(area_utm.geometry)
     mask = np.zeros_like(Z, dtype=bool)
     px = xi_grid + (grid_res_m / 2.0)
     py = yi_grid + (grid_res_m / 2.0)
-    
     for i in range(py.shape[0]):
         pts = [Point(x, y) for x, y in zip(px[i, :], py[i, :])]
         mask[i, :] = np.array([poly.contains(pt) for pt in pts])
-    
+
     Z_masked = np.where(mask, Z, np.nan)
-    
-    # Normalização para visual
+
+    # Normalização/cores
     vmin = np.nanpercentile(Z_masked, 2)
     vmax = np.nanpercentile(Z_masked, 98)
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
         vmin = np.nanmin(Z_masked)
         vmax = np.nanmax(Z_masked)
-    
     norm = Normalize(vmin=vmin, vmax=vmax, clip=True)
     cmap = cm.get_cmap(cmap_name)
+
     rgba = cmap(norm(Z_masked))
     rgba[..., 3] = np.where(np.isnan(Z_masked), 0.0, 0.75)
-    
-    # Salva PNG do overlay
+
+    # Salva PNG e **embute em base64** (data URI)
     tmp_png_path = "/tmp/interp_overlay.png"
     plt.imsave(tmp_png_path, rgba, format="png", origin="lower")
-    
+    with open(tmp_png_path, "rb") as f:
+        data_url = "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
+
     # Bounds para overlay (em lat/lon)
     bb_ll = gpd.GeoSeries([Point(xmin, ymin)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
     bb_ur = gpd.GeoSeries([Point(xmax, ymax)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
     bounds = [[bb_ll.y, bb_ll.x], [bb_ur.y, bb_ur.x]]
-    
-    # Cria mapa Folium
-    m = folium.Map(location=start_loc, zoom_start=15, tiles="OpenStreetMap")
+
+    # Mapa Folium (com camadas base selecionáveis)
+    m = folium.Map(location=start_loc, zoom_start=15, tiles=None, control_scale=True)
+    folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True).add_to(m)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satélite', overlay=False, control=True
+        attr='Esri', name='Satélite', control=True
     ).add_to(m)
-    
+
     # Polígono da área
     if show_area:
         folium.GeoJson(
@@ -447,10 +456,10 @@ def create_interactive_map(gdf_points, gdf_area, prod_column="produtividade_kg",
             name="Área de Estudo",
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.1, "weight": 2}
         ).add_to(m)
-    
-    # Overlay da interpolação
+
+    # Overlay da interpolação (data URI → funciona no navegador)
     overlay = folium.raster_layers.ImageOverlay(
-        image=tmp_png_path,
+        image=data_url,          # <- aqui está a diferença
         bounds=bounds,
         opacity=1.0,
         name=f"Interpolação ({METHODS[method_key]['description']})",
@@ -458,6 +467,28 @@ def create_interactive_map(gdf_points, gdf_area, prod_column="produtividade_kg",
         cross_origin=False
     )
     overlay.add_to(m)
+
+    # Pontos
+    if show_points:
+        for _, row in gdf_points.iterrows():
+            if row.geometry is not None:
+                lat, lon = row.geometry.y, row.geometry.x
+                sc_ha = row.get('produtividade_sc/ha', np.nan)
+                popup_html = (
+                    f"<b>Produtividade:</b> {row.get(prod_column, np.nan):.2f} kg<br/>"
+                    f"<b>SC/HA:</b> {sc_ha:.2f}<br/>"
+                    f"<b>Lat/Lon:</b> {lat:.6f}, {lon:.6f}"
+                )
+                folium.CircleMarker(
+                    location=[lat, lon],
+                    radius=4,
+                    color="black",
+                    fill=True, fill_opacity=0.85,
+                    popup=folium.Popup(popup_html, max_width=300)
+                ).add_to(m)
+
+    folium.LayerControl(collapsed=False, position="topright").add_to(m)
+    return m, norm, cmap
     
     # Pontos
     if show_points:
