@@ -3,6 +3,7 @@ from datetime import datetime
 import ee 
 import geemap 
 import folium
+import streamlit.components.v1 as components
 import base64
 import pandas as pd 
 import geopandas as gpd 
@@ -512,6 +513,21 @@ def create_interactive_map(
     folium.LayerControl(collapsed=False).add_to(m)
     return m, norm, cmap
 
+def show_map_safely(fmap, key="map", height=600, width=1200):
+    """
+    Tenta usar st_folium. Se não estiver disponível ou der erro,
+    cai para renderização HTML pura (components.html).
+    """
+    if ST_FOLIUM_AVAILABLE:
+        try:
+            return st_folium(fmap, width=width, height=height, key=key)
+        except Exception as e:
+            st.warning(f"Falha no componente interativo, usando visualização alternativa. Detalhe: {e}")
+    # Fallback: HTML puro do Folium (data URIs já funcionam direto no navegador)
+    html = fmap.get_root().render()
+    components.html(html, height=height, scrolling=False)
+    return None
+
 def create_static_map(gdf_points, gdf_area, prod_column="produtividade_kg"):
     """Cria mapa estático como fallback quando streamlit_folium não está disponível"""
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -578,7 +594,7 @@ if st.session_state.processing_complete and st.session_state.processed_data:
         
         # Exibir mapa com verificação de disponibilidade do componente
         if ST_FOLIUM_AVAILABLE:
-            st_folium(interactive_map, width=1200, height=600, key="main_map")
+            show_map_safely(interactive_map, key="main_map", height=600, width=1200)
         else:
             st.warning("Componente interativo não disponível - exibindo mapa estático")
             fig_static = create_static_map(gdf_pred, gdf_area)
