@@ -1,12 +1,62 @@
 # app.py
 import streamlit as st
+import datetime
+import json
+import os
 
+# ======== CONFIG INICIAL (APENAS UMA VEZ) ========
 st.set_page_config(
     page_title="☕ SAFRA DO CAFÉ | Sistema para Cafeicultura de Precisão",
     page_icon="☕",
     layout="wide"
 )
 
+# ========= CONTROLE DE ACESSO POR TOKEN =========
+TOKEN_FILE = "tokens.json"
+TOKEN_DURATION_HOURS = 48  # só por segurança; o admin já grava expiração certa
+
+def carregar_tokens():
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def validar_token(token: str):
+    tokens = carregar_tokens()
+    if token not in tokens:
+        return False, "Token não encontrado."
+
+    dados = tokens[token]
+    expira_em = datetime.datetime.fromisoformat(dados["expira_em"])
+    agora = datetime.datetime.utcnow()
+
+    if agora > expira_em:
+        return False, "Token expirado."
+
+    return True, None
+
+# Lê token dos parâmetros da URL
+query_params = st.experimental_get_query_params()
+token_param = query_params.get("token", [None])[0]
+
+if not token_param:
+    st.error("🔒 Acesso restrito — este sistema requer um link de acesso válido de 48h.")
+    st.markdown(
+        "Para obter acesso, visite o site oficial: "
+        "[Safra do Café](https://safradocafe.com.br/)"
+    )
+    st.stop()
+
+valido, msg = validar_token(token_param)
+if not valido:
+    st.error(f"🔒 Acesso negado: {msg}")
+    st.markdown(
+        "Seu acesso expirou ou é inválido. "
+        "[Solicite um novo acesso pelo site](https://safradocafe.com.br/)."
+    )
+    st.stop()
+
+# ======== DAQUI PRA BAIXO É O CÓDIGO ORIGINAL DA HOME ========
 st.title("☕ Safra do Café")
 st.caption("Sistema avançado de geotecnologias para Cafeicultura de Precisão")
 
@@ -72,3 +122,4 @@ Caso não tenha esses dados para teste do sistema, você pode baixá-los neste l
 **Dica:** siga a ordem das abas para um fluxo completo, iniciando por **Adicionar informações** e finalizando em **Previsão da safra**.
 """
 )
+
