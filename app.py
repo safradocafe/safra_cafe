@@ -1,3 +1,50 @@
+import streamlit as st
+import datetime
+import json
+import os
+from urllib.parse import urlparse, parse_qs
+
+# ======== CONFIGURAÇÕES ========
+TOKEN_FILE = "tokens.json"  # arquivo local simples para armazenar tokens
+TOKEN_DURATION_HOURS = 48   # validade de 48h
+
+# ======== FUNÇÕES AUXILIARES ========
+def carregar_tokens():
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def salvar_tokens(tokens):
+    with open(TOKEN_FILE, "w") as f:
+        json.dump(tokens, f, indent=4)
+
+def validar_token(token):
+    tokens = carregar_tokens()
+    if token not in tokens:
+        return False, "Token não encontrado."
+    
+    expira_em = datetime.datetime.fromisoformat(tokens[token]["expira_em"])
+    agora = datetime.datetime.utcnow()
+    if agora > expira_em:
+        return False, "Token expirado."
+    return True, None
+
+# ======== VERIFICA TOKEN DA URL ========
+query_params = st.experimental_get_query_params()
+token_param = query_params.get("token", [None])[0]
+
+if not token_param:
+    st.error("🔒 Acesso restrito — este sistema requer um token válido. Obtenha seu acesso no site oficial.")
+    st.stop()
+
+valido, msg = validar_token(token_param)
+if not valido:
+    st.error(f"🔒 Acesso negado: {msg}")
+    st.markdown("[Obtenha um novo acesso de 48h](https://safradocafe.com.br/)")
+    st.stop()
+
+
 # app.py
 import streamlit as st
 
