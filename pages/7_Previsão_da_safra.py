@@ -669,9 +669,11 @@ elif process_btn:
 
         gdf_pred["produtividade_kg"] = yhat
 
-        # === NOVO: conversão kg → sc/ha usando densidade de plantas por hectare
-        # (sacas = kg_total / 60  e  kg_total/ha = kg_por_planta * plantas/ha)
-        gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (DENSIDADE_PLANTAS_HA / 60.0)
+        # === AJUSTE SOLICITADO: conversão kg → sc/ha considerando que cada amostra representa 5 plantas ===
+        # Antes:
+        # gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (DENSIDADE_PLANTAS_HA / 60.0)
+        # Agora (divide por 5.0):
+        gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (DENSIDADE_PLANTAS_HA / 60.0) / 5.0
 
         # Enriquecimento com lat/lon
         if "latitude" not in gdf_pred.columns and "geometry" in gdf_pred.columns:
