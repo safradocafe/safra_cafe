@@ -312,7 +312,50 @@ def inserir_produtividade():
 # =======================
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
 
-# --- Barra de ações rápida
+# --- 1) Mapa (logo abaixo do título)
+mapa = create_map()
+mapa_data = st_folium(mapa, use_container_width=True, height=520, key='mapa_principal')
+
+# --- Eventos do mapa (logo após o mapa)
+# 1) captura polígono desenhado
+if mapa_data and mapa_data.get('last_active_drawing'):
+    geometry = mapa_data['last_active_drawing']['geometry']
+    gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+    st.session_state.gdf_poligono = gdf
+    st.session_state.map_fit_bounds = _fit_bounds_from_gdf(gdf)
+    st.success("Área amostral definida!")
+    time.sleep(0.2)
+    st.rerun()
+
+# 2) clique para criar PONTO (se modo ativo)
+if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
+    lat = mapa_data["last_clicked"]["lat"]
+    lon = mapa_data["last_clicked"]["lng"]
+    token = f"{lat:.6f},{lon:.6f}"
+    if token != st.session_state.get("last_click_token", None):
+        valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
+        _add_point(lat, lon, metodo="clique" + ("+voz" if st.session_state.voice_mode else ""), valor=valor)
+        st.session_state.last_click_token = token
+        if st.session_state.voice_mode and st.session_state.voice_value:
+            st.session_state.voice_value = 0.0
+        st.success("Ponto adicionado!")
+        time.sleep(0.15)
+        st.rerun()
+
+# --- 2) Uploads (fonte reduzida)
+st.markdown('<div class="sub-mini">Uploads (opcional)</div>', unsafe_allow_html=True)
+u1, u2 = st.columns(2)
+with u1:
+    uploaded_area = st.file_uploader("Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
+    if uploaded_area:
+        processar_arquivo_carregado(uploaded_area, tipo='amostral')
+with u2:
+    uploaded_pontos = st.file_uploader("Pontos de produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
+    if uploaded_pontos:
+        processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
+
+# --- 3) Controles que ficavam acima do mapa (mantida a lógica)
+# Barra de ações rápida
 a1, a2, a3, a4 = st.columns([1,1,1,1])
 with a1:
     if st.button("🧭 Definir área amostral (desenhar)"):
@@ -332,11 +375,13 @@ with a4:
         st.session_state.voice_mode = False
         st.success("Área e pontos limpos!")
 
-# --- Linha 2: unidade e voz
+# Linha 2: unidade e voz + parâmetros
 b1, b2, b3 = st.columns([1,2,2])
 with b1:
-    st.session_state.unidade_selecionada = st.selectbox("Unidade", ['kg','latas','litros'],
-                                                        index=['kg','latas','litros'].index(st.session_state.unidade_selecionada))
+    st.session_state.unidade_selecionada = st.selectbox(
+        "Unidade", ['kg','latas','litros'],
+        index=['kg','latas','litros'].index(st.session_state.unidade_selecionada)
+    )
 with b2:
     st.markdown("**Produtividade por voz (opcional)**")
     if st.session_state.voice_mode:
@@ -366,50 +411,8 @@ with b3:
     st.session_state.densidade_plantas = st.number_input("Densidade (plantas/ha)", value=float(st.session_state.densidade_plantas or 0))
     st.session_state.produtividade_media = st.number_input("Produtividade média última safra (sacas/ha)", value=float(st.session_state.produtividade_media or 0))
 
-# --- Mapa
-mapa = create_map()
-mapa_data = st_folium(mapa, use_container_width=True, height=520, key='mapa_principal')
-
-# --- Uploads (opcional) — REINSERIDOS ---
-st.markdown("### Uploads")
-u1, u2 = st.columns(2)
-with u1:
-    uploaded_area = st.file_uploader("Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
-    if uploaded_area:
-        processar_arquivo_carregado(uploaded_area, tipo='amostral')
-with u2:
-    uploaded_pontos = st.file_uploader("Pontos de produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
-    if uploaded_pontos:
-        processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
-
-# --- Eventos do mapa
-# 1) captura polígono desenhado
-if mapa_data and mapa_data.get('last_active_drawing'):
-    geometry = mapa_data['last_active_drawing']['geometry']
-    gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-    st.session_state.gdf_poligono = gdf
-    st.session_state.map_fit_bounds = _fit_bounds_from_gdf(gdf)
-    st.success("Área amostral definida!")
-    time.sleep(0.2)
-    st.rerun()
-
-# 2) clique para criar PONTO (se modo ativo)
-if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
-    lat = mapa_data["last_clicked"]["lat"]
-    lon = mapa_data["last_clicked"]["lng"]
-    token = f"{lat:.6f},{lon:.6f}"
-    if token != st.session_state.get("last_click_token", None):
-        valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
-        _add_point(lat, lon, metodo="clique" + ("+voz" if st.session_state.voice_mode else ""), valor=valor)
-        st.session_state.last_click_token = token
-        if st.session_state.voice_mode and st.session_state.voice_value:
-            st.session_state.voice_value = 0.0
-        st.success("Ponto adicionado!")
-        time.sleep(0.15)
-        st.rerun()
-
 # =======================
-# Painel inferior
+# Painel inferior (inalterado)
 # =======================
 st.markdown('<div class="controls-title">Ações</div>', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns([1,1,1,1])
@@ -448,3 +451,4 @@ with c3:
 with c4:
     if st.button("☁️ Salvar dados na nuvem"):
         salvar_no_streamlit_cloud()
+
