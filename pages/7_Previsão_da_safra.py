@@ -72,18 +72,16 @@ def linear_interpolation(xyz, xi, yi):
     return griddata((xyz[:, 0], xyz[:, 1]), xyz[:, 2], (xi, yi), method='linear')
 
 METHODS = {
-    'idw': {'function': idw_interpolation, 'description': 'Inverse Distance Weighting'},
-    'spline': {'function': spline_interpolation, 'description': 'Spline (RBF)'},
-    'nearest':{'function': nearest_interpolation,'description': 'Vizinho Mais Próximo'},
-    'linear': {'function': linear_interpolation, 'description': 'Interpolação Linear'},
+    'idw': {'function': idw_interpolation, 'description': 'IDW'},
+    'spline': {'function': spline_interpolation, 'description': 'Spline'},
+    'nearest':{'function': nearest_interpolation,'description': 'Vizinho mais próximo'},
+    'linear': {'function': linear_interpolation, 'description': 'Interpolação linear'},
 }
 
 def get_local_utm_epsg(lon, lat):
     """Escolhe EPSG UTM local baseado no centroide (hemisfério sul/norte)."""
     zone = int((lon + 180) / 6) + 1
     return (32700 + zone) if lat < 0 else (32600 + zone)
-
-# [MANTIDAS TODAS AS FUNÇÕES ORIGINAIS ATÉ AQUI...]
 
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base):
@@ -241,7 +239,7 @@ buffer_m = int(params.get("buffer_m", 5))
 cloud_pred = st.sidebar.slider("Nuvens para PREDIÇÃO (%)", 0, 60, 20, 1)
 st.sidebar.caption(f"Treinamento usa os parâmetros do processamento: nuvens **{cloud_train}%**, buffer **{buffer_m} m**.")
 
-# Novo sidebar para configurações do mapa
+# configurações do mapa
 with st.sidebar:
     st.markdown("---")
     st.subheader("Configurações do Mapa")
@@ -458,9 +456,9 @@ def create_interactive_map(
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.1, "weight": 2}
         ).add_to(m)
 
-    # Overlay da interpolação (data URI → funciona no navegador)
+    # Overlay da interpolação 
     overlay = folium.raster_layers.ImageOverlay(
-        image=data_url,          # <- aqui está a diferença
+        image=data_url,         
         bounds=bounds,
         opacity=1.0,
         name=f"Interpolação ({METHODS[method_key]['description']})",
@@ -523,7 +521,7 @@ def show_map_safely(fmap, key="map", height=600, width=1200):
             return st_folium(fmap, width=width, height=height, key=key)
         except Exception as e:
             st.warning(f"Falha no componente interativo, usando visualização alternativa. Detalhe: {e}")
-    # Fallback: HTML puro do Folium (data URIs já funcionam direto no navegador)
+    # Fallback: HTML puro do Folium 
     html = fmap.get_root().render()
     components.html(html, height=height, scrolling=False)
     return None
