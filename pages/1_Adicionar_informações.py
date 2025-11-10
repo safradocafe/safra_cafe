@@ -474,10 +474,7 @@ with b3:
         value=float(st.session_state.produtividade_media or 0)
     )
 
-# =======================
 # Painel inferior (inalterado)
-# =======================
-st.markdown('<div class="controls-title">Ações</div>', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
 with c1:
     if st.button("🔢 Gerar pontos automáticos (2/ha)"):
