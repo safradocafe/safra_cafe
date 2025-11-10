@@ -102,10 +102,10 @@ def linear_interpolation(xyz, xi, yi):
     return griddata((xyz[:, 0], xyz[:, 1]), xyz[:, 2], (xi, yi), method='linear')
 
 METHODS = {
-    'idw':    {'function': idw_interpolation,    'description': 'Inverse Distance Weighting'},
-    'spline': {'function': spline_interpolation, 'description': 'Spline (RBF)'},
-    'nearest':{'function': nearest_interpolation,'description': 'Vizinho Mais Próximo'},
-    'linear': {'function': linear_interpolation, 'description': 'Interpolação Linear'},
+    'idw':    {'function': idw_interpolation,    'description': 'IDW'},
+    'spline': {'function': spline_interpolation, 'description': 'Spline'},
+    'nearest':{'function': nearest_interpolation,'description': 'Vizinho mais próximo'},
+    'linear': {'function': linear_interpolation, 'description': 'Interpolação linear'},
 }
 
 # -------------------------------
