@@ -22,7 +22,7 @@ from sklearn.metrics import r2_score, mean_squared_error
 # Página / estilo
 # =========================
 st.set_page_config(layout="wide")
-st.markdown("## 🧠 Treinamento e Avaliação de Modelos (20 execuções por algoritmo)")
+st.markdown("## 🧠 Treinamento e avaliação de modelos (20 execuções por algoritmo)")
 st.caption("Carrega o CSV mais recente salvo na nuvem, treina 11 modelos 20x cada, guarda o melhor de cada e destaca o melhor global.")
 
 BASE_TMP = "/tmp/streamlit_dados"
