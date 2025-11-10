@@ -1,4 +1,3 @@
-# pages/8_Gerenciar_acessos.py
 import streamlit as st
 import uuid
 import datetime
@@ -28,7 +27,7 @@ st.title("🔑 Gerenciar acessos de 48h")
 
 # --- Proteção simples com senha ---
 senha = st.text_input("Senha de administrador", type="password")
-SENHA_CORRETA = "cafeprecisao2025"  # TODO: troque por outra e guarde em st.secrets depois
+SENHA_CORRETA = "cafeprecisao2025"  
 
 if senha != SENHA_CORRETA:
     st.warning("Informe a senha de administrador para continuar.")
