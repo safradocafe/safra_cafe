@@ -87,7 +87,7 @@ def _fit_bounds_from_gdf(gdf):
     return [[b[1], b[0]], [b[3], b[2]]]
 
 def _point_inside_area(lat, lon) -> bool:
-    if st.session_state.gdf_poligono is None: 
+    if st.session_state.gdf_poligono is None:
         return True  # se não há polígono, aceita clicar em qualquer lugar
     poly = st.session_state.gdf_poligono.geometry.unary_union
     return prep(poly).contains(Point(lon, lat))
@@ -320,7 +320,6 @@ with a1:
 with a2:
     st.session_state.add_mode = st.toggle("➕ Adicionar pontos no clique", value=st.session_state.add_mode, help="Ative e clique no mapa para criar pontos.")
 with a3:
-    # Modo voz: grava número e guarda para o próximo clique
     st.session_state.voice_mode = st.toggle("🎙️ Modo voz (falar produtividade)", value=st.session_state.voice_mode)
 with a4:
     if st.button("🗑️ Limpar área e pontos"):
@@ -350,7 +349,6 @@ with b2:
                 with sr.AudioFile(wav_path) as source:
                     data = rec.record(source)
                 txt = rec.recognize_google(data, language="pt-BR")
-                # extrai primeiro número "12,5" / "12.5"
                 m = re.search(r"(\d+[.,]?\d*)", txt.replace("vírgula", ","))
                 if m:
                     val = float(m.group(1).replace(",", "."))
@@ -372,6 +370,18 @@ with b3:
 mapa = create_map()
 mapa_data = st_folium(mapa, use_container_width=True, height=520, key='mapa_principal')
 
+# --- Uploads (opcional) — REINSERIDOS ---
+st.markdown("### Uploads")
+u1, u2 = st.columns(2)
+with u1:
+    uploaded_area = st.file_uploader("Área amostral (.gpkg)", type=['gpkg'], key='upload_area')
+    if uploaded_area:
+        processar_arquivo_carregado(uploaded_area, tipo='amostral')
+with u2:
+    uploaded_pontos = st.file_uploader("Pontos de produtividade (.gpkg)", type=['gpkg'], key='upload_pontos')
+    if uploaded_pontos:
+        processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
+
 # --- Eventos do mapa
 # 1) captura polígono desenhado
 if mapa_data and mapa_data.get('last_active_drawing'):
@@ -387,14 +397,11 @@ if mapa_data and mapa_data.get('last_active_drawing'):
 if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     lat = mapa_data["last_clicked"]["lat"]
     lon = mapa_data["last_clicked"]["lng"]
-    # token do clique para não duplicar durante reruns
     token = f"{lat:.6f},{lon:.6f}"
     if token != st.session_state.get("last_click_token", None):
-        # usa valor de voz se tiver; senão 0
         valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
         _add_point(lat, lon, metodo="clique" + ("+voz" if st.session_state.voice_mode else ""), valor=valor)
         st.session_state.last_click_token = token
-        # se consumiu o valor de voz, zera (um clique por gravação)
         if st.session_state.voice_mode and st.session_state.voice_value:
             st.session_state.voice_value = 0.0
         st.success("Ponto adicionado!")
@@ -408,11 +415,9 @@ st.markdown('<div class="controls-title">Ações</div>', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns([1,1,1,1])
 with c1:
     if st.button("🔢 Gerar pontos automáticos (2/ha)"):
-        # mesma lógica anterior
         if st.session_state.gdf_poligono is None:
             st.warning("Defina a área amostral primeiro.")
         else:
-            # cálculo rápido aproximado (mantido do seu código)
             gdf = st.session_state.gdf_poligono
             centroid = gdf.geometry.centroid.iloc[0]
             utm_zone = int((centroid.x + 180) / 6) + 1
