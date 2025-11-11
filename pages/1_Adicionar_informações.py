@@ -107,7 +107,7 @@ def _point_inside_area(lat, lon) -> bool:
     poly = st.session_state.gdf_poligono.geometry.unary_union
     return prep(poly).contains(Point(lon, lat))
 
-# Mapa
+# Mapa - CORREÇÃO APLICADA AQUI
 def create_map():
     if st.session_state.gdf_poligono is not None:
         m = folium.Map(location=[0, 0], zoom_start=2, tiles=None, control_scale=True)
@@ -117,12 +117,13 @@ def create_map():
     else:
         m = folium.Map(location=[-15, -55], zoom_start=4, tiles=None, control_scale=True)
 
-    # bases
-    folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True, show=True).add_to(m)
+    # bases - AGORA AMBAS AS CAMADAS ESTÃO DISPONÍVEIS
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satélite', control=True, show=False
+        attr='Esri', name='Satélite', control=True, show=True  # Alterado para show=True como padrão
     ).add_to(m)
+    
+    folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True, show=False).add_to(m)
 
     # desenho da área (polígono; sem marker)
     folium.plugins.Draw(
@@ -482,7 +483,7 @@ with b3:
         value=float(st.session_state.produtividade_media or 0)
     )
 
-# Painel inferior (inalterado)
+# Painel inferior
 c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
 with c1:
     if st.button("🔢 Gerar pontos automáticos (2/ha)"):
