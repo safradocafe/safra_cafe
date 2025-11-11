@@ -102,15 +102,18 @@ def _fit_bounds_from_gdf(gdf):
 
 
 def _point_inside_area(lat, lon) -> bool:
+    """Mais permissivo: aceita pontos dentro ou na borda (covers)"""
     if st.session_state.gdf_poligono is None:
         return True  
     poly = st.session_state.gdf_poligono.geometry.unary_union
-    return prep(poly).contains(Point(lon, lat))
+    pt = Point(lon, lat)
+    try:
+        return poly.covers(pt) or poly.contains(pt)
+    except Exception:
+        # fallback conservador para evitar bloquear por erro de geometrias
+        return True
 
 
-# =======================
-# Mapa
-# =======================
 def create_map():
     if st.session_state.gdf_poligono is not None:
         m = folium.Map(
@@ -125,7 +128,10 @@ def create_map():
         )
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
         st.session_state.map_fit_bounds = bounds
-        m.fit_bounds(bounds, padding=(20, 20), max_zoom=20)  
+        try:
+            m.fit_bounds(bounds, padding=(20, 20), max_zoom=20)  
+        except Exception:
+            pass
     else:
         m = folium.Map(
             location=[-15, -55], 
@@ -138,20 +144,21 @@ def create_map():
             max_bounds=True
         )
 
-    # bases - manter compatibilidade com visualização anterior; satélite como camada padrão visível
+    # bases - deixar satélite visível por padrão (você pode trocar)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri', name='Satélite', control=True, show=True
     ).add_to(m)
+    
     folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True, show=False).add_to(m)
 
-    # desenho da área (polígono; sem marker na barra de desenho)
-    # IMPORTANT: 'marker' DESATIVADO para evitar ícone/estética do "pingo d'água".
-    # o modo de adicionar pontos continuará sendo o clique no mapa (last_clicked).
+    # desenho da área (polígono; agora marker sempre habilitado para garantir captura de cliques)
     folium.plugins.Draw(
         draw_options={
             'polyline': False, 'rectangle': True, 'circle': False,
-            'circlemarker': False, 'marker': False,
+            'circlemarker': False,
+            # importante: habilitar marker para que o Leaflet aceite marcações
+            'marker': True,
             'polygon': {'allowIntersection': False, 'showArea': True, 'repeatMode': False}
         },
         export=False, position='topleft'
@@ -165,14 +172,8 @@ def create_map():
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.2, "weight": 2}
         ).add_to(m)
 
-    # pontos existentes — desenhados como CircleMarker redondos
+    # pontos existentes - círculo visível e opaco
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
-        # garante colunas latitude/longitude e valores coerentes
-        if 'latitude' not in st.session_state.gdf_pontos.columns:
-            st.session_state.gdf_pontos['latitude'] = st.session_state.gdf_pontos.geometry.y
-        if 'longitude' not in st.session_state.gdf_pontos.columns:
-            st.session_state.gdf_pontos['longitude'] = st.session_state.gdf_pontos.geometry.x
-
         for _, row in st.session_state.gdf_pontos.iterrows():
             folium.CircleMarker(
                 location=[row['latitude'], row['longitude']],
@@ -186,7 +187,7 @@ def create_map():
                 popup=folium.Popup(
                     f"Ponto: {row.get('Code','-')}<br>"
                     f"Produtividade: {row.get('valor',0)} {row.get('unidade','') }<br>"
-                    f"Convertido: {row.get('maduro_kg',0):.2f} kg<br>"
+                    f"Convertido: {row.get('maduro_kg',0.0):.2f} kg<br>"
                     f"Método: {row.get('metodo','')}",
                     max_width=300
                 )
@@ -195,10 +196,7 @@ def create_map():
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
     return m
 
-
-# =======================
 # Upload & IO
-# =======================
 def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
     try:
         if uploaded_file is None:
@@ -265,7 +263,7 @@ def salvar_no_streamlit_cloud():
        st.session_state.get("produtividade_media") is None:
         st.warning("⚠️ Parâmetros de densidade e produtividade não definidos!")
         return
-
+ 
     base_dir = "/tmp/streamlit_dados"
     os.makedirs(base_dir, exist_ok=True)
 
@@ -298,43 +296,36 @@ def salvar_no_streamlit_cloud():
     st.success("✅ Dados salvos. Veja o mapa de produtividade.")
 
 
-def exportar_dados():
-    if st.session_state.gdf_poligono is None:
-        st.warning("⚠️ Defina a área amostral antes de exportar!")
+def salvar_pontos_marcados_temp():
+    """Salva os pontos atuais no local padrão para serem detectados por outras abas."""
+    if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
+        st.warning("⚠️ Não há pontos para salvar.")
         return
-
-    tmp_dir = "/tmp/export_zip"
-    os.makedirs(tmp_dir, exist_ok=True)
-
-    poligono_path = os.path.join(tmp_dir, "area_amostral.gpkg")
-    pontos_path   = os.path.join(tmp_dir, "pontos_produtividade.gpkg")
-    params_path   = os.path.join(tmp_dir, "parametros_area.json")
-    zip_path      = os.path.join(tmp_dir, "dados_produtividade.zip")
-
-    st.session_state.gdf_poligono.to_file(poligono_path, driver="GPKG")
-    if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
-        st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
-
+    base_dir = "/tmp/streamlit_dados"
+    os.makedirs(base_dir, exist_ok=True)
+    # cria um subdiretório com timestamp compatível com o padrão
+    carimbo = time.strftime("%Y%m%d-%H%M%S")
+    save_dir = os.path.join(base_dir, f"salvamento-{carimbo}")
+    os.makedirs(save_dir, exist_ok=True)
+    pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
+    st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
+    # se já houver área salva no session_state, grava também para consistência
+    if st.session_state.get("gdf_poligono") is not None:
+        area_path = os.path.join(save_dir, "area_amostral.gpkg")
+        st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
+    params_path = os.path.join(save_dir, "parametros_area.json")
     parametros = {
-        'densidade_pes_ha': st.session_state.densidade_plantas,
-        'produtividade_media_sacas_ha': st.session_state.produtividade_media
+        "densidade_pes_ha": st.session_state.densidade_plantas,
+        "produtividade_media_sacas_ha": st.session_state.produtividade_media,
     }
     with open(params_path, "w") as f:
         json.dump(parametros, f)
-
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        zipf.write(poligono_path, arcname="area_amostral.gpkg")
-        if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
-            zipf.write(pontos_path, arcname="pontos_produtividade.gpkg")
-        zipf.write(params_path, arcname="parametros_area.json")
-
-    with open(zip_path, "rb") as f:
-        st.download_button(
-            "💾 Exportar dados (ZIP)",
-            data=f.read(),
-            file_name="dados_produtividade.zip",
-            mime="application/zip"
-        )
+    # atualiza session_state para que outras abas detectem
+    st.session_state["tmp_save_dir"] = save_dir
+    st.session_state["tmp_pontos_path"] = pontos_path
+    st.session_state["tmp_area_path"] = os.path.join(save_dir, "area_amostral.gpkg") if st.session_state.get("gdf_poligono") is not None else None
+    st.session_state["tmp_params_path"] = params_path
+    st.success(f"✅ Pontos salvos em: {save_dir}")
 
 
 # Inserção/edição de pontos
@@ -371,7 +362,7 @@ def _add_point(lat, lon, metodo, valor=None):
         'metodo': metodo
     }
     
-    # Adiciona o ponto corretamente ao GeoDataFrame
+    # Adiciona o novo ponto ao GeoDataFrame
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
     else:
@@ -379,7 +370,7 @@ def _add_point(lat, lon, metodo, valor=None):
         st.session_state.gdf_pontos = pd.concat([st.session_state.gdf_pontos, novo_df], ignore_index=True)
         st.session_state.gdf_pontos = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
     
-    # atualiza session_state
+    # Força persistência na sessão
     st.session_state.gdf_pontos = st.session_state.gdf_pontos
     return True
 
@@ -413,13 +404,13 @@ def inserir_produtividade():
             with col:
                 current_value = st.session_state.get(f"valor_pt_{idx}", 0.0)
                 st.number_input(
-                    f"📍 Ponto {idx+1} ({row.get('Code','-')})",
+                    f"📍 Ponto {idx+1} ({row['Code']})",
                     key=f"valor_pt_{idx}",
                     value=float(current_value),
                     min_value=0.0,
                     step=0.01,
                     format="%.2f",
-                    help=f"Lat: {row.get('latitude',0):.4f}, Lon: {row.get('longitude',0):.4f}"
+                    help=f"Lat: {row['latitude']:.4f}, Lon: {row['longitude']:.4f}"
                 )
         submitted = st.form_submit_button("💾 Salvar todas as produtividades", type="primary")
 
@@ -437,29 +428,41 @@ def inserir_produtividade():
         time.sleep(1)
         st.rerun()
 
-
 # Layout
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
 
 mapa = create_map()
 mapa_data = st_folium(mapa, use_container_width=True, height=520, key='mapa_principal')
 
-# 1) captura polígono 
 if mapa_data and mapa_data.get('last_active_drawing'):
     geometry = mapa_data['last_active_drawing']['geometry']
-    gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
-    st.session_state.gdf_poligono = gdf
-    st.session_state.map_fit_bounds = _fit_bounds_from_gdf(gdf)
-    st.success("Área amostral definida!")
-    time.sleep(0.2)
-    st.rerun()
+    # Se foi desenhado um polígono, mantemos o comportamento anterior
+    if geometry.get('type') in ('Polygon', 'MultiPolygon'):
+        gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
+        st.session_state.gdf_poligono = gdf
+        st.session_state.map_fit_bounds = _fit_bounds_from_gdf(gdf)
+        st.success("Área amostral definida!")
+        time.sleep(0.2)
+        st.rerun()
+    # Se o usuário desenhou/colocou um marker via Draw, adicionamos o ponto
+    elif geometry.get('type') in ('Point',):
+        coords = geometry.get('coordinates', None)
+        if coords and len(coords) >= 2:
+            lon, lat = coords[0], coords[1]
+            # adiciona ponto marcado via Draw
+            sucesso = _add_point(lat, lon, metodo="draw_marker", valor=0.0)
+            if sucesso:
+                st.success(f"✅ Ponto adicionado (draw) em {lat:.6f}, {lon:.6f}")
+            time.sleep(0.15)
+            st.rerun()
 
-# 2) clique para criar ponto
+# Clique simples no mapa 
 if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     lat = mapa_data["last_clicked"]["lat"]
     lon = mapa_data["last_clicked"]["lng"]
     token = f"{lat:.6f},{lon:.6f}"
     
+    # Verifica se é um clique novo (não duplicado)
     if token != st.session_state.get("last_click_token", None):
         valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
         sucesso = _add_point(
@@ -473,10 +476,10 @@ if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
                 st.session_state.voice_value = 0.0
             pontos_count = len(st.session_state.gdf_pontos) if st.session_state.gdf_pontos is not None else 0
             st.success(f"✅ Ponto {pontos_count} adicionado em ({lat:.4f}, {lon:.4f})!")
-        time.sleep(0.5)
+        time.sleep(0.2)
         st.rerun()
 
-# Uploads 
+# --- Uploads 
 st.markdown('<div class="sub-mini">Uploads (opcional)</div>', unsafe_allow_html=True)
 u1, u2 = st.columns(2)
 with u1:
@@ -488,7 +491,7 @@ with u2:
     if uploaded_pontos:
         processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
 
-# Controles 
+# --- Controles 
 a1, a2, a3, a4 = st.columns([1, 1, 1, 1])
 with a1:
     if st.button("🧭 Definir área amostral"):
@@ -497,7 +500,7 @@ with a2:
     st.session_state.add_mode = st.toggle(
         "➕ Adicionar pontos no clique",
         value=st.session_state.add_mode,
-        help="Ative e clique no mapa para criar pontos. O ícone de marcador foi desativado para usar CircleMarker redondos."
+        help="Ative e clique no mapa para criar pontos. O ícone de marcador ficará disponível na barra de desenho."
     )
 with a3:
     st.session_state.voice_mode = st.toggle("🎙️ Modo voz (falar produtividade)", value=st.session_state.voice_mode)
@@ -593,19 +596,6 @@ with c4:
     if st.button("☁️ Salvar dados na nuvem"):
         salvar_no_streamlit_cloud()
 
-# NOVO: botão para salvar pontos marcados localmente (para outras abas localizarem rapidamente)
-st.markdown("")  # espaçamento
-if st.button("💾 Salvar pontos marcados (temporário)"):
-    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
-        st.warning("⚠️ Não há pontos para salvar.")
-    else:
-        base_dir = "/tmp/streamlit_dados"
-        os.makedirs(base_dir, exist_ok=True)
-        pontos_temp_path = os.path.join(base_dir, "points_temp.gpkg")
-        try:
-            st.session_state.gdf_pontos.to_file(pontos_temp_path, driver="GPKG")
-            st.session_state["tmp_pontos_path"] = pontos_temp_path
-            st.success(f"✅ Pontos salvos temporariamente em: {pontos_temp_path}")
-        except Exception as e:
-            st.error("❌ Falha ao salvar pontos temporários.")
-            st.exception(e)
+st.markdown("")  
+if st.button("💾 Salvar pontos marcados"):
+    salvar_pontos_marcados_temp()
