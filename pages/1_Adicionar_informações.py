@@ -115,22 +115,22 @@ def create_map():
             tiles=None, 
             control_scale=True,
             zoom_control=True,
-            min_zoom=2,       # Zoom mínimo mais próximo
-            max_zoom=22,      # Zoom máximo bem próximo
-            max_bounds=True   # Permite zoom mais próximo nos limites
+            min_zoom=2,       
+            max_zoom=22,      
+            max_bounds=True   
         )
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
         st.session_state.map_fit_bounds = bounds
-        m.fit_bounds(bounds, padding=(20, 20), max_zoom=20)  # Aumenta o zoom máximo no fit_bounds
+        m.fit_bounds(bounds, padding=(20, 20), max_zoom=20)  
     else:
         m = folium.Map(
             location=[-15, -55], 
-            zoom_start=4, 
+            zoom_start=2, 
             tiles=None, 
             control_scale=True,
             zoom_control=True,
-            min_zoom=2,
-            max_zoom=22,
+            min_zoom=1,
+            max_zoom=32,
             max_bounds=True
         )
 
