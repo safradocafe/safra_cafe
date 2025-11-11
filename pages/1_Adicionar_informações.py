@@ -128,7 +128,7 @@ def create_map():
     folium.plugins.Draw(
         draw_options={
             'polyline': False, 'rectangle': True, 'circle': False,
-            'circlemarker': False, 'marker': False,
+            'circlemarker': False, 'marker': st.session_state.add_mode,  # Ativa marcadores quando em modo de adição
             'polygon': {'allowIntersection': False, 'showArea': True, 'repeatMode': False}
         },
         export=False, position='topleft'
@@ -332,19 +332,21 @@ def inserir_produtividade():
     unidade = st.session_state.unidade_selecionada or "kg"
     st.markdown(f"**Inserir/editar produtividade** — unidade atual: `{unidade}`")
 
-    # inicializa valores no estado
+    # Inicializa valores no estado se não existirem
     for idx, row in gdf.iterrows():
         key = f"valor_pt_{idx}"
         if key not in st.session_state:
-            st.session_state[key] = float(row.get("valor", 0.0) or 0.0)
+            # Usa o valor atual do ponto se existir, senão 0.0
+            current_val = row.get("valor", 0.0)
+            st.session_state[key] = float(current_val) if pd.notna(current_val) else 0.0
 
     with st.form("form_produtividade", clear_on_submit=False):
         cols = st.columns(3)
-        for idx, _ in gdf.iterrows():
+        for idx, row in gdf.iterrows():
             col = cols[idx % 3]
             with col:
                 st.number_input(
-                    f"Ponto {idx+1}",
+                    f"Ponto {idx+1} ({row['Code']})",
                     key=f"valor_pt_{idx}",
                     min_value=0.0,
                     step=0.01,
@@ -353,12 +355,16 @@ def inserir_produtividade():
         submitted = st.form_submit_button("Salvar produtividade", type="primary")
 
     if submitted:
+        # Atualiza os valores no GeoDataFrame
         for idx in gdf.index:
             v = float(st.session_state.get(f"valor_pt_{idx}", 0.0))
             gdf.at[idx, "valor"] = v
+            gdf.at[idx, "unidade"] = unidade  # Atualiza a unidade também
             gdf.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
         st.session_state.gdf_pontos = gdf
-        st.success("Produtividades salvas e convertidas para kg.")
+        st.success("Produtividades salvas e convertidas para kg!")
+        time.sleep(1)
+        st.rerun()
 
 # Layout
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
@@ -376,11 +382,13 @@ if mapa_data and mapa_data.get('last_active_drawing'):
     time.sleep(0.2)
     st.rerun()
 
-# 2) clique para criar ponto
+# 2) clique para criar ponto - CORRIGIDO
 if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     lat = mapa_data["last_clicked"]["lat"]
     lon = mapa_data["last_clicked"]["lng"]
     token = f"{lat:.6f},{lon:.6f}"
+    
+    # Verifica se é um clique novo (não do desenho)
     if token != st.session_state.get("last_click_token", None):
         valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
         _add_point(
@@ -416,7 +424,7 @@ with a2:
     st.session_state.add_mode = st.toggle(
         "➕ Adicionar pontos no clique",
         value=st.session_state.add_mode,
-        help="Ative e clique no mapa para criar pontos."
+        help="Ative e clique no mapa para criar pontos. O ícone de marcador ficará disponível na barra de desenho."
     )
 with a3:
     st.session_state.voice_mode = st.toggle("🎙️ Modo voz (falar produtividade)", value=st.session_state.voice_mode)
@@ -457,7 +465,7 @@ with b2:
                     st.session_state.voice_value = val
                     st.success(f"Valor reconhecido: {val:.2f} {st.session_state.unidade_selecionada}. Clique no mapa para criar o ponto.")
                 else:
-                    st.warning(f"Não consegui extrair número de: “{txt}”.")
+                    st.warning(f"Não consegui extrair número de: \"{txt}\".")
             except Exception as e:
                 st.warning(f"Não foi possível transcrever o áudio: {e}")
     else:
