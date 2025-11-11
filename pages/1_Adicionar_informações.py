@@ -122,25 +122,25 @@ def create_map():
             tiles=None, 
             control_scale=True,
             zoom_control=True,
-            min_zoom=2,       
-            max_zoom=22,      
+            min_zoom=1,       
+            max_zoom=23,      
             max_bounds=True   
         )
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
         st.session_state.map_fit_bounds = bounds
         try:
-            m.fit_bounds(bounds, padding=(20, 20), max_zoom=20)  
+            m.fit_bounds(bounds, padding=(20, 20), max_zoom=23)  
         except Exception:
             pass
     else:
         m = folium.Map(
             location=[-15, -55], 
-            zoom_start=2, 
+            zoom_start=4, 
             tiles=None, 
             control_scale=True,
             zoom_control=True,
             min_zoom=1,
-            max_zoom=32,
+            max_zoom=23,
             max_bounds=True
         )
 
