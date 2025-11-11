@@ -160,13 +160,19 @@ def create_map():
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.2, "weight": 2}
         ).add_to(m)
 
-    # pontos existentes
+    # pontos existentes - CORREÇÃO APLICADA AQUI
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         for _, row in st.session_state.gdf_pontos.iterrows():
+            # Ponto redondo pequeno mas visível
             folium.CircleMarker(
                 location=[row['latitude'], row['longitude']],
-                radius=5, color="green", fill=True, fill_color="green", fill_opacity=0.8,
-                popup=f"Ponto: {row['Code']}<br>Produtividade (kg): {row['maduro_kg']:.2f}"
+                radius=8,  # Aumentado para melhor visualização
+                color="red",  # Cor mais visível
+                weight=2,  # Contorno mais espesso
+                fill=True, 
+                fill_color="red", 
+                fill_opacity=0.9,  # Mais opaco
+                popup=f"Ponto: {row['Code']}<br>Produtividade (kg): {row['maduro_kg']:.2f}<br>Método: {row['metodo']}"
             ).add_to(m)
 
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
@@ -309,7 +315,7 @@ def exportar_dados():
             mime="application/zip"
         )
 
-# Inserção/edição de pontos
+# Inserção/edição de pontos - CORREÇÃO APLICADA AQUI
 def _ensure_points_df():
     if st.session_state.gdf_pontos is None:
         st.session_state.gdf_pontos = gpd.GeoDataFrame(
@@ -317,15 +323,20 @@ def _ensure_points_df():
                      'coletado', 'latitude', 'longitude', 'metodo'],
             geometry='geometry', crs="EPSG:4326"
         )
+    # Garante que o DataFrame não seja vazio após inicialização
+    return st.session_state.gdf_pontos is not None
 
 
 def _add_point(lat, lon, metodo, valor=None):
     _ensure_points_df()
     if not _point_inside_area(lat, lon):
         st.warning("⚠️ Clique fora da área amostral. Ponto ignorado.")
-        return
+        return False
+    
     valor = float(valor) if (valor is not None and str(valor).strip() != "") else 0.0
-    novo = {
+    
+    # Cria novo ponto
+    novo_ponto = {
         'geometry': Point(lon, lat),
         'Code': gerar_codigo(),
         'valor': valor,
@@ -336,19 +347,30 @@ def _add_point(lat, lon, metodo, valor=None):
         'longitude': lon,
         'metodo': metodo
     }
-    st.session_state.gdf_pontos = gpd.GeoDataFrame(
-        pd.concat([st.session_state.gdf_pontos, pd.DataFrame([novo])], ignore_index=True),
-        geometry='geometry', crs="EPSG:4326"
-    )
+    
+    # Adiciona ao GeoDataFrame existente
+    if st.session_state.gdf_pontos is None:
+        st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
+    else:
+        novo_gdf = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
+        st.session_state.gdf_pontos = gpd.GeoDataFrame(
+            pd.concat([st.session_state.gdf_pontos, novo_gdf], ignore_index=True),
+            geometry='geometry', crs="EPSG:4326"
+        )
+    
+    return True
 
 
 def inserir_produtividade():
-    gdf = st.session_state.get("gdf_pontos")
-    if gdf is None or gdf.empty:
-        st.warning("Nenhum ponto disponível!")
+    # CORREÇÃO: Verificação mais robusta dos pontos
+    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
+        st.warning("⚠️ Nenhum ponto disponível! Adicione pontos no mapa primeiro.")
         return
+    
+    gdf = st.session_state.gdf_pontos
     unidade = st.session_state.unidade_selecionada or "kg"
     st.markdown(f"**Inserir/editar produtividade** — unidade atual: `{unidade}`")
+    st.info(f"📊 **Total de pontos disponíveis: {len(gdf)}**")
 
     # Inicializa valores no estado se não existirem
     for idx, row in gdf.iterrows():
@@ -363,14 +385,16 @@ def inserir_produtividade():
         for idx, row in gdf.iterrows():
             col = cols[idx % 3]
             with col:
+                current_value = st.session_state.get(f"valor_pt_{idx}", 0.0)
                 st.number_input(
                     f"Ponto {idx+1} ({row['Code']})",
                     key=f"valor_pt_{idx}",
+                    value=float(current_value),
                     min_value=0.0,
                     step=0.01,
                     format="%.2f"
                 )
-        submitted = st.form_submit_button("Salvar produtividade", type="primary")
+        submitted = st.form_submit_button("💾 Salvar produtividade", type="primary")
 
     if submitted:
         # Atualiza os valores no GeoDataFrame
@@ -379,8 +403,10 @@ def inserir_produtividade():
             gdf.at[idx, "valor"] = v
             gdf.at[idx, "unidade"] = unidade  # Atualiza a unidade também
             gdf.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
+        
+        # CORREÇÃO: Garante que as alterações sejam persistidas
         st.session_state.gdf_pontos = gdf
-        st.success("Produtividades salvas e convertidas para kg!")
+        st.success(f"✅ Produtividades salvas para {len(gdf)} pontos!")
         time.sleep(1)
         st.rerun()
 
@@ -400,7 +426,7 @@ if mapa_data and mapa_data.get('last_active_drawing'):
     time.sleep(0.2)
     st.rerun()
 
-# 2) clique para criar ponto - CORRIGIDO
+# 2) clique para criar ponto - CORREÇÃO APLICADA AQUI
 if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     lat = mapa_data["last_clicked"]["lat"]
     lon = mapa_data["last_clicked"]["lng"]
@@ -409,15 +435,16 @@ if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     # Verifica se é um clique novo (não do desenho)
     if token != st.session_state.get("last_click_token", None):
         valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
-        _add_point(
+        sucesso = _add_point(
             lat, lon,
             metodo="clique" + ("+voz" if st.session_state.voice_mode else ""),
             valor=valor
         )
-        st.session_state.last_click_token = token
-        if st.session_state.voice_mode and st.session_state.voice_value:
-            st.session_state.voice_value = 0.0
-        st.success("Ponto adicionado!")
+        if sucesso:
+            st.session_state.last_click_token = token
+            if st.session_state.voice_mode and st.session_state.voice_value:
+                st.session_state.voice_value = 0.0
+            st.success(f"✅ Ponto adicionado! Total: {len(st.session_state.gdf_pontos)} pontos")
         time.sleep(0.15)
         st.rerun()
 
