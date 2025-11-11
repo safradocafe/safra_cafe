@@ -137,7 +137,7 @@ def create_map():
     # bases - AGORA AMBAS AS CAMADAS ESTÃO DISPONÍVEIS
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri', name='Satélite', control=True, show=True  # Alterado para show=True como padrão
+        attr='Esri', name='Satélite', control=True, show=True
     ).add_to(m)
     
     folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True, show=False).add_to(m)
@@ -146,7 +146,7 @@ def create_map():
     folium.plugins.Draw(
         draw_options={
             'polyline': False, 'rectangle': True, 'circle': False,
-            'circlemarker': False, 'marker': st.session_state.add_mode,  # Ativa marcadores quando em modo de adição
+            'circlemarker': False, 'marker': st.session_state.add_mode,
             'polygon': {'allowIntersection': False, 'showArea': True, 'repeatMode': False}
         },
         export=False, position='topleft'
@@ -163,16 +163,23 @@ def create_map():
     # pontos existentes - CORREÇÃO APLICADA AQUI
     if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
         for _, row in st.session_state.gdf_pontos.iterrows():
-            # Ponto redondo pequeno mas visível
+            # Ponto redondo pequeno mas visível - SEM efeito de "pingo d'água"
             folium.CircleMarker(
                 location=[row['latitude'], row['longitude']],
-                radius=8,  # Aumentado para melhor visualização
-                color="red",  # Cor mais visível
-                weight=2,  # Contorno mais espesso
+                radius=6,  # Tamanho ideal para visualização
+                color="#FF0000",  # Vermelho sólido
+                weight=1,  # Contorno fino
                 fill=True, 
-                fill_color="red", 
-                fill_opacity=0.9,  # Mais opaco
-                popup=f"Ponto: {row['Code']}<br>Produtividade (kg): {row['maduro_kg']:.2f}<br>Método: {row['metodo']}"
+                fill_color="#FF0000",  # Vermelho sólido
+                fill_opacity=1.0,  # Totalmente opaco
+                opacity=1.0,  # Sem transparência no contorno
+                popup=folium.Popup(
+                    f"Ponto: {row['Code']}<br>"
+                    f"Produtividade: {row['valor']} {row['unidade']}<br>"
+                    f"Convertido: {row['maduro_kg']:.2f} kg<br>"
+                    f"Método: {row['metodo']}",
+                    max_width=300
+                )
             ).add_to(m)
 
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
@@ -323,7 +330,6 @@ def _ensure_points_df():
                      'coletado', 'latitude', 'longitude', 'metodo'],
             geometry='geometry', crs="EPSG:4326"
         )
-    # Garante que o DataFrame não seja vazio após inicialização
     return st.session_state.gdf_pontos is not None
 
 
@@ -343,13 +349,14 @@ def _add_point(lat, lon, metodo, valor=None):
         'Code': gerar_codigo(),
         'valor': valor,
         'unidade': st.session_state.unidade_selecionada,
-        'maduro_kg': converter_para_kg(valor, st.session_state.unidade_selecoionada),
+        'maduro_kg': converter_para_kg(valor, st.session_state.unidade_selecionada),
         'coletado': False,
         'latitude': lat,
         'longitude': lon,
         'metodo': metodo
-    }    
-   
+    }
+    
+    # CORREÇÃO: Adiciona o ponto corretamente ao GeoDataFrame
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
     else:
@@ -359,20 +366,23 @@ def _add_point(lat, lon, metodo, valor=None):
         # Garante que continua sendo um GeoDataFrame
         st.session_state.gdf_pontos = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
     
+    # CORREÇÃO: Força atualização do session state
     st.session_state.gdf_pontos = st.session_state.gdf_pontos
     return True
 
 
 def inserir_produtividade():
     # CORREÇÃO: Verificação mais robusta dos pontos
-    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
-        st.warning("⚠️ Nenhum ponto disponível! Adicione pontos no mapa primeiro.")
+    if (st.session_state.gdf_pontos is None or 
+        st.session_state.gdf_pontos.empty or 
+        len(st.session_state.gdf_pontos) == 0):
+        st.warning("⚠️ Nenhum ponto disponível! Adicione pontos no mapa primeiro usando o modo 'Adicionar pontos no clique'.")
         return
     
     gdf = st.session_state.gdf_pontos
     unidade = st.session_state.unidade_selecionada or "kg"
     st.markdown(f"**Inserir/editar produtividade** — unidade atual: `{unidade}`")
-    st.info(f"📊 **Total de pontos disponíveis: {len(gdf)}**")
+    st.success(f"📊 **Total de pontos disponíveis para edição: {len(gdf)}**")
 
     # Inicializa valores no estado se não existirem
     for idx, row in gdf.iterrows():
@@ -380,35 +390,42 @@ def inserir_produtividade():
         if key not in st.session_state:
             # Usa o valor atual do ponto se existir, senão 0.0
             current_val = row.get("valor", 0.0)
-            st.session_state[key] = float(current_val) if pd.notna(current_val) else 0.0
+            try:
+                st.session_state[key] = float(current_val) if pd.notna(current_val) else 0.0
+            except (ValueError, TypeError):
+                st.session_state[key] = 0.0
 
     with st.form("form_produtividade", clear_on_submit=False):
+        st.subheader(f"Editar {len(gdf)} pontos")
         cols = st.columns(3)
         for idx, row in gdf.iterrows():
             col = cols[idx % 3]
             with col:
                 current_value = st.session_state.get(f"valor_pt_{idx}", 0.0)
                 st.number_input(
-                    f"Ponto {idx+1} ({row['Code']})",
+                    f"📍 Ponto {idx+1} ({row['Code']})",
                     key=f"valor_pt_{idx}",
                     value=float(current_value),
                     min_value=0.0,
                     step=0.01,
-                    format="%.2f"
+                    format="%.2f",
+                    help=f"Lat: {row['latitude']:.4f}, Lon: {row['longitude']:.4f}"
                 )
-        submitted = st.form_submit_button("💾 Salvar produtividade", type="primary")
+        submitted = st.form_submit_button("💾 Salvar todas as produtividades", type="primary")
 
     if submitted:
         # Atualiza os valores no GeoDataFrame
+        pontos_atualizados = 0
         for idx in gdf.index:
             v = float(st.session_state.get(f"valor_pt_{idx}", 0.0))
             gdf.at[idx, "valor"] = v
-            gdf.at[idx, "unidade"] = unidade  # Atualiza a unidade também
+            gdf.at[idx, "unidade"] = unidade
             gdf.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
+            pontos_atualizados += 1
         
         # CORREÇÃO: Garante que as alterações sejam persistidas
         st.session_state.gdf_pontos = gdf
-        st.success(f"✅ Produtividades salvas para {len(gdf)} pontos!")
+        st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos!")
         time.sleep(1)
         st.rerun()
 
@@ -446,8 +463,10 @@ if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
             st.session_state.last_click_token = token
             if st.session_state.voice_mode and st.session_state.voice_value:
                 st.session_state.voice_value = 0.0
-            st.success(f"✅ Ponto adicionado! Total: {len(st.session_state.gdf_pontos)} pontos")
-        time.sleep(0.15)
+            # CORREÇÃO: Mostra confirmação com informações do ponto
+            pontos_count = len(st.session_state.gdf_pontos) if st.session_state.gdf_pontos is not None else 0
+            st.success(f"✅ Ponto {pontos_count} adicionado em ({lat:.4f}, {lon:.4f})!")
+        time.sleep(0.5)
         st.rerun()
 
 # --- 2) Uploads 
