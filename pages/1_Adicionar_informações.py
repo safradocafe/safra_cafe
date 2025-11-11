@@ -252,7 +252,7 @@ def salvar_no_streamlit_cloud():
     if os.path.exists(pontos_path):
         st.session_state["tmp_pontos_path"] = pontos_path
 
-    st.success("✅ Dados salvos Vá para monitoramento.")
+    st.success("✅ Dados salvos. Veja o mapa de produtividade.")
 
 def exportar_dados():
     if st.session_state.gdf_poligono is None:
