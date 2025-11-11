@@ -328,7 +328,9 @@ def _ensure_points_df():
 
 
 def _add_point(lat, lon, metodo, valor=None):
+    # Garante que o DataFrame de pontos existe
     _ensure_points_df()
+    
     if not _point_inside_area(lat, lon):
         st.warning("⚠️ Clique fora da área amostral. Ponto ignorado.")
         return False
@@ -341,23 +343,23 @@ def _add_point(lat, lon, metodo, valor=None):
         'Code': gerar_codigo(),
         'valor': valor,
         'unidade': st.session_state.unidade_selecionada,
-        'maduro_kg': converter_para_kg(valor, st.session_state.unidade_selecionada),
+        'maduro_kg': converter_para_kg(valor, st.session_state.unidade_selecoionada),
         'coletado': False,
         'latitude': lat,
         'longitude': lon,
         'metodo': metodo
-    }
-    
-    # Adiciona ao GeoDataFrame existente
-    if st.session_state.gdf_pontos is None:
+    }    
+   
+    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
     else:
-        novo_gdf = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
-        st.session_state.gdf_pontos = gpd.GeoDataFrame(
-            pd.concat([st.session_state.gdf_pontos, novo_gdf], ignore_index=True),
-            geometry='geometry', crs="EPSG:4326"
-        )
+        # Adiciona o novo ponto ao DataFrame existente
+        novo_df = pd.DataFrame([novo_ponto])
+        st.session_state.gdf_pontos = pd.concat([st.session_state.gdf_pontos, novo_df], ignore_index=True)
+        # Garante que continua sendo um GeoDataFrame
+        st.session_state.gdf_pontos = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
     
+    st.session_state.gdf_pontos = st.session_state.gdf_pontos
     return True
 
 
