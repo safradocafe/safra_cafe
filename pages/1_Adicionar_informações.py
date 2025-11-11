@@ -107,15 +107,32 @@ def _point_inside_area(lat, lon) -> bool:
     poly = st.session_state.gdf_poligono.geometry.unary_union
     return prep(poly).contains(Point(lon, lat))
 
-# Mapa - CORREÇÃO APLICADA AQUI
 def create_map():
     if st.session_state.gdf_poligono is not None:
-        m = folium.Map(location=[0, 0], zoom_start=2, tiles=None, control_scale=True)
+        m = folium.Map(
+            location=[0, 0], 
+            zoom_start=2, 
+            tiles=None, 
+            control_scale=True,
+            zoom_control=True,
+            min_zoom=2,       # Zoom mínimo mais próximo
+            max_zoom=22,      # Zoom máximo bem próximo
+            max_bounds=True   # Permite zoom mais próximo nos limites
+        )
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
         st.session_state.map_fit_bounds = bounds
-        m.fit_bounds(bounds, padding=(20, 20))
+        m.fit_bounds(bounds, padding=(20, 20), max_zoom=20)  # Aumenta o zoom máximo no fit_bounds
     else:
-        m = folium.Map(location=[-15, -55], zoom_start=4, tiles=None, control_scale=True)
+        m = folium.Map(
+            location=[-15, -55], 
+            zoom_start=4, 
+            tiles=None, 
+            control_scale=True,
+            zoom_control=True,
+            min_zoom=2,
+            max_zoom=22,
+            max_bounds=True
+        )
 
     # bases - AGORA AMBAS AS CAMADAS ESTÃO DISPONÍVEIS
     folium.TileLayer(
