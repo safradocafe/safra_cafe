@@ -249,31 +249,19 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
         st.exception(e)
         return None
 
-def salvar_produtividade_temp():
-    """Salva os pontos E dados de produtividade em arquivos TEMPORÁRIOS na nuvem do Streamlit."""
+def salvar_produtividade_temp():    
     if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Não há pontos para salvar.")
-        return None
-
-    # Usar diretório temporário padrão do Streamlit Cloud
+        return None   
     base_dir = "/tmp/streamlit_dados"
-    os.makedirs(base_dir, exist_ok=True)
-    
-    # Diretório de sessão atual - persiste durante a execução do app
+    os.makedirs(base_dir, exist_ok=True)       
     save_dir = os.path.join(base_dir, "sessao_atual")
-    os.makedirs(save_dir, exist_ok=True)
-    
-    pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
-
-    # Garantir que todos os dados de produtividade estão presentes
-    pontos_gdf = st.session_state.gdf_pontos.copy()
-    
+    os.makedirs(save_dir, exist_ok=True)    
+    pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")  
+    pontos_gdf = st.session_state.gdf_pontos.copy()    
     if not isinstance(pontos_gdf, gpd.GeoDataFrame):
         pontos_gdf = gpd.GeoDataFrame(pontos_gdf, geometry='geometry', crs="EPSG:4326")
-
-    # COLUNAS ESSENCIAIS para as análises seguintes
-    colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
-    
+    colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']    
     for col in colunas_necessarias:
         if col not in pontos_gdf.columns:
             if col == 'latitude' and 'geometry' in pontos_gdf.columns:
@@ -285,18 +273,15 @@ def salvar_produtividade_temp():
             elif col == 'Code':
                 pontos_gdf['Code'] = [gerar_codigo() for _ in range(len(pontos_gdf))]
 
-    # Garantir valores válidos de produtividade
     pontos_gdf['maduro_kg'] = pontos_gdf['maduro_kg'].fillna(0.0)
     pontos_gdf = pontos_gdf[colunas_necessarias]
-
-    # SALVAR na nuvem temporária
+    
     try:
         pontos_gdf.to_file(pontos_path, driver="GPKG")
     except Exception as e:
         st.error(f"❌ Erro ao salvar dados na nuvem: {e}")
         return None
 
-    # Salvar área amostral se existir
     if st.session_state.get("gdf_poligono") is not None:
         area_path = os.path.join(save_dir, "area_amostral.gpkg")
         try:
@@ -325,13 +310,11 @@ def salvar_produtividade_temp():
     return save_dir
 
 def carregar_dados_salvos():
-    """Carrega os dados salvos TEMPORARIAMENTE na nuvem do Streamlit"""
     try:
         save_dir = "/tmp/streamlit_dados/sessao_atual"
         pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
         
-        if os.path.exists(pontos_path):
-            # Carregar pontos de produtividade
+        if os.path.exists(pontos_path):           
             gdf_pontos = gpd.read_file(pontos_path)
             st.session_state.gdf_pontos = gdf_pontos
             
@@ -481,7 +464,7 @@ def inserir_produtividade():
             except (ValueError, TypeError):
                 st.session_state[key] = 0.0
 
-    with st.form("form_produtividade", clear_on_submit=False):
+    with st.form("form_produtividade", clear_on_submit=True):
         st.subheader(f"Editar {len(gdf)} pontos")
         cols = st.columns(3)
         
