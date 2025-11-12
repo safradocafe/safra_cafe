@@ -692,4 +692,17 @@ with c1:
             gdf_p['Code'] = [gerar_codigo() for _ in range(len(gdf_p))]
             gdf_p['maduro_kg'] = 0.0
             gdf_p['latitude'] = gdf_p.geometry.y
-            gdf_p['longitude
+            gdf_p['longitude'] = gdf_p.geometry.x
+            st.session_state.gdf_pontos = gdf_p
+            # Salva automaticamente os pontos gerados
+            salvar_produtividade_temp()
+            st.success(f"{len(gdf_p)} pontos gerados automaticamente!")
+with c2:
+    if st.button("📝 Inserir/editar produtividade"):
+        inserir_produtividade()
+with c3:
+    if st.button("💾 Exportar dados"):
+        exportar_dados()
+with c4:
+    if st.button("☁️ Salvar dados na nuvem"):
+        salvar_no_streamlit_cloud()
