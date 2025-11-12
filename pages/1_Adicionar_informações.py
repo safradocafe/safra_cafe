@@ -16,7 +16,6 @@ from shapely.prepared import prep
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-import speech_recognition as sr
 
 # =======================
 # CSS compacto e z-index dos controles do Leaflet
@@ -183,9 +182,9 @@ def create_map():
                 opacity=1.0,
                 popup=folium.Popup(
                     f"Ponto: {row.get('Code','-')}<br>"
-                    f"Produtividade: {row.get('valor',0)} {row.get('unidade','') }<br>"
-                    f"Convertido: {row.get('maduro_kg',0.0):.2f} kg<br>"
-                    f"Método: {row.get('metodo','')}",
+                    f"Produtividade: {row.get('maduro_kg',0):.2f} kg<br>"
+                    f"Lat: {row.get('latitude',0):.6f}<br>"
+                    f"Lon: {row.get('longitude',0):.6f}",
                     max_width=300
                 )
             ).add_to(m)
@@ -226,6 +225,7 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
             if gdf.empty or not gdf.geom_type.isin(['Point', 'MultiPoint']).any():
                 st.error("❌ O arquivo de pontos deve conter geometrias do tipo Ponto.")
                 return None
+            # Colunas necessárias simplificadas
             required_cols = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
             faltando = [c for c in required_cols if c not in gdf.columns]
             if faltando:
@@ -292,12 +292,10 @@ def salvar_no_streamlit_cloud():
     if os.path.exists(pontos_path):
         st.session_state["tmp_pontos_path"] = pontos_path
 
-    st.success("✅ Dados salvos. Veja o mapa de produtividade.")
-    st.info(f"📁 Dados salvos em: `{save_dir}`")
+    st.success("✅ Dados salvos. Siga adiante!") 
 
 def salvar_pontos_marcados_temp():
-    """Salva os pontos atuais no local padrão para serem detectados por outras abas.
-       Correções: garante GeoDataFrame válido, grava geometry corretamente e retorna o caminho."""
+    """Salva os pontos atuais no local padrão para serem detectados por outras abas."""
     if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Não há pontos para salvar.")
         return None
@@ -325,21 +323,21 @@ def salvar_pontos_marcados_temp():
                 st.error("❌ Não foi possível determinar a geometria dos pontos.")
                 return None
 
-    # Verificar e garantir colunas necessárias
-    if 'valor' not in pontos_gdf.columns:
-        pontos_gdf['valor'] = 0.0
-    if 'unidade' not in pontos_gdf.columns:
-        pontos_gdf['unidade'] = st.session_state.unidade_selecionada
-    if 'maduro_kg' not in pontos_gdf.columns:
-        pontos_gdf['maduro_kg'] = pontos_gdf.apply(
-            lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')),
-            axis=1
-        )
+    # Garantir apenas as colunas necessárias
+    colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
+    for col in colunas_necessarias:
+        if col not in pontos_gdf.columns:
+            if col == 'latitude' and 'geometry' in pontos_gdf.columns:
+                pontos_gdf['latitude'] = pontos_gdf.geometry.y
+            elif col == 'longitude' and 'geometry' in pontos_gdf.columns:
+                pontos_gdf['longitude'] = pontos_gdf.geometry.x
+            elif col == 'maduro_kg':
+                pontos_gdf['maduro_kg'] = 0.0
+            elif col == 'Code':
+                pontos_gdf['Code'] = [gerar_codigo() for _ in range(len(pontos_gdf))]
 
-    # Garantir latitude/longitude preenchidas
-    if 'latitude' not in pontos_gdf.columns or 'longitude' not in pontos_gdf.columns:
-        pontos_gdf['latitude'] = pontos_gdf.geometry.y
-        pontos_gdf['longitude'] = pontos_gdf.geometry.x
+    # Manter apenas colunas necessárias
+    pontos_gdf = pontos_gdf[colunas_necessarias]
 
     # Salvar o arquivo
     try:
@@ -433,13 +431,12 @@ def exportar_dados():
 def _ensure_points_df():
     if st.session_state.gdf_pontos is None:
         st.session_state.gdf_pontos = gpd.GeoDataFrame(
-            columns=['geometry', 'Code', 'valor', 'unidade', 'maduro_kg',
-                     'coletado', 'latitude', 'longitude', 'metodo'],
+            columns=['geometry', 'Code', 'maduro_kg', 'latitude', 'longitude'],
             geometry='geometry', crs="EPSG:4326"
         )
     return st.session_state.gdf_pontos is not None
 
-def _add_point(lat, lon, metodo, valor=None):
+def _add_point(lat, lon, valor=None):
     # Garante que o DataFrame de pontos existe
     _ensure_points_df()
 
@@ -447,19 +444,19 @@ def _add_point(lat, lon, metodo, valor=None):
         st.warning("⚠️ Clique fora da área amostral. Ponto ignorado.")
         return False
 
-    valor = float(valor) if (valor is not None and str(valor).strip() != "") else 0.0
+    # Converte valor para kg diretamente
+    if valor is not None and str(valor).strip() != "":
+        valor_kg = converter_para_kg(valor, st.session_state.unidade_selecionada)
+    else:
+        valor_kg = 0.0
 
-    # Cria novo ponto
+    # Cria novo ponto com estrutura simplificada
     novo_ponto = {
         'geometry': Point(lon, lat),
         'Code': gerar_codigo(),
-        'valor': valor,
-        'unidade': st.session_state.unidade_selecionada,
-        'maduro_kg': converter_para_kg(valor, st.session_state.unidade_selecionada),
-        'coletado': False,
+        'maduro_kg': valor_kg,
         'latitude': lat,
-        'longitude': lon,
-        'metodo': metodo
+        'longitude': lon
     }
 
     # Adiciona o novo ponto ao GeoDataFrame
@@ -491,7 +488,7 @@ def inserir_produtividade():
     for idx, row in gdf.reset_index(drop=True).iterrows():
         key = f"valor_pt_{idx}"
         if key not in st.session_state:
-            current_val = row.get("valor", 0.0)
+            current_val = row.get("maduro_kg", 0.0)
             try:
                 st.session_state[key] = float(current_val) if pd.notna(current_val) else 0.0
             except (ValueError, TypeError):
@@ -521,9 +518,7 @@ def inserir_produtividade():
         gdf_for_save = gdf.reset_index(drop=True).copy()
         for idx in gdf_for_save.index:
             v = float(st.session_state.get(f"valor_pt_{idx}", 0.0))
-            gdf_for_save.at[idx, "valor"] = v
-            gdf_for_save.at[idx, "unidade"] = unidade
-            gdf_for_save.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
+            gdf_for_save.at[idx, "maduro_kg"] = v
             updated_count += 1
 
         # Conservar geometry e converter para GeoDataFrame antes de gravar na sessão
@@ -572,7 +567,7 @@ if mapa_data and mapa_data.get('last_active_drawing'):
         if coords and len(coords) >= 2:
             lon, lat = coords[0], coords[1]
             # adiciona ponto marcado via Draw
-            sucesso = _add_point(lat, lon, metodo="draw_marker", valor=0.0)
+            sucesso = _add_point(lat, lon, valor=0.0)
             if sucesso:
                 st.success(f"✅ Ponto adicionado (draw) em {lat:.6f}, {lon:.6f}")
             time.sleep(0.15)
@@ -587,11 +582,7 @@ if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     # Verifica se é um clique novo (não duplicado)
     if token != st.session_state.get("last_click_token", None):
         valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
-        sucesso = _add_point(
-            lat, lon,
-            metodo="clique" + ("+voz" if st.session_state.voice_mode else ""),
-            valor=valor
-        )
+        sucesso = _add_point(lat, lon, valor=valor)
         if sucesso:
             st.session_state.last_click_token = token
             if st.session_state.voice_mode and st.session_state.voice_value:
@@ -647,27 +638,21 @@ with b1:
 with b2:
     st.markdown("**Produtividade por voz (opcional)**")
     if st.session_state.voice_mode:
-        audio = st.audio_input("Gravar número da produtividade (ex.: '12 vírgula 5')", key="voz_input")
-        if audio is not None:
-            wav_path = "/tmp/voz_produtividade.wav"
-            with open(wav_path, "wb") as f:
-                f.write(audio.getvalue())
-            rec = sr.Recognizer()
+        # Substituição do audio_input por text_input para entrada manual
+        voice_input = st.text_input(
+            "Digite o valor da produtividade (ex.: '12.5')", 
+            key="voz_input",
+            placeholder="Ex: 12.5 para 12.5 kg"
+        )
+        if voice_input:
             try:
-                with sr.AudioFile(wav_path) as source:
-                    data = rec.record(source)
-                txt = rec.recognize_google(data, language="pt-BR")
-                m = re.search(r"(\d+[.,]?\d*)", txt.replace("vírgula", ","))
-                if m:
-                    val = float(m.group(1).replace(",", "."))
-                    st.session_state.voice_value = val
-                    st.success(f"Valor reconhecido: {val:.2f} {st.session_state.unidade_selecionada}. Clique no mapa para criar o ponto.")
-                else:
-                    st.warning(f"Não consegui extrair número de: \"{txt}\".")
-            except Exception as e:
-                st.warning(f"Não foi possível transcrever o áudio: {e}")
+                val = float(voice_input.replace(",", "."))
+                st.session_state.voice_value = val
+                st.success(f"Valor definido: {val:.2f} {st.session_state.unidade_selecionada}. Clique no mapa para criar o ponto.")
+            except ValueError:
+                st.warning("Por favor, digite um número válido (ex: 12.5)")
     else:
-        st.caption("Ative o modo voz para gravar o número; no próximo clique no mapa o ponto é criado com esse valor.")
+        st.caption("Ative o modo voz para digitar o valor; no próximo clique no mapa o ponto é criado com esse valor.")
 with b3:
     st.markdown("**Parâmetros da área**")
     st.session_state.densidade_plantas = st.number_input(
@@ -698,13 +683,9 @@ with c1:
             pontos = [Point(x, y) for x in xs for y in ys if gdf_utm.geometry.iloc[0].contains(Point(x, y))]
             gdf_p = gpd.GeoDataFrame(geometry=pontos, crs=gdf_utm.crs).to_crs(4326)
             gdf_p['Code'] = [gerar_codigo() for _ in range(len(gdf_p))]
-            gdf_p['valor'] = 0.0
-            gdf_p['unidade'] = st.session_state.unidade_selecionada
             gdf_p['maduro_kg'] = 0.0
-            gdf_p['coletado'] = False
             gdf_p['latitude'] = gdf_p.geometry.y
             gdf_p['longitude'] = gdf_p.geometry.x
-            gdf_p['metodo'] = 'auto'
             st.session_state.gdf_pontos = gdf_p
             st.success(f"{len(gdf_p)} pontos gerados automaticamente!")
 with c2:
