@@ -18,39 +18,38 @@ import folium
 from streamlit_folium import st_folium
 import speech_recognition as sr
 
-
 # =======================
 # CSS compacto e z-index dos controles do Leaflet
 # =======================
-st.markdown("""
-<style>
-.block-container { padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
-header, footer {visibility: hidden;}
-div[data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
-.leaflet-control { z-index: 1000 !important; }
-.leaflet-top.leaflet-right { top: 12px !important; right: 12px !important; }
-.leaflet-top.leaflet-left { top: 12px !important; left: 12px !important; }
-.leaflet-control-layers-expanded { max-height: 260px; overflow:auto; }
-
-/* Upload compacto */
-div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
-  border: 1px dashed #999 !important;
-  background: #fafafa !important;
-  padding: 6px 8px !important;
-  min-height: 60px !important;
-  margin: 0.2rem 0 !important;
-}
-div[data-testid="stFileUploaderDropzone"] small,
-div[data-testid="stFileUploaderDropzone"] span { display: none !important; }
-div[data-testid="stFileUploaderDropzone"]::after {
-  content: "Arraste e solte o arquivo aqui ou clique para selecionar";
-  display: block; color: #444; font-size: 11px; text-align: center; padding-top: 4px;
-}
-.controls-title { font-size: 12px !important; font-weight: 700; margin: 2px 0 2px 0 !important; }
-.sub-mini { font-size: 11px !important; font-weight: 600; margin: 2px 0 1px 0 !important; }
-</style>
-""", unsafe_allow_html=True)
-
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
+    header, footer {visibility: hidden;}
+    div[data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
+    .leaflet-control { z-index: 1000 !important; }
+    .leaflet-top.leaflet-right { top: 12px !important; right: 12px !important; }
+    .leaflet-top.leaflet-left { top: 12px !important; left: 12px !important; }
+    .leaflet-control-layers-expanded { max-height: 260px; overflow:auto; }
+    /* Upload compacto */
+    div[data-testid="stFileUploader"] div[data-testid="stFileUploaderDropzone"] {
+      border: 1px dashed #999 !important;
+      background: #fafafa !important;
+      padding: 6px 8px !important;
+      min-height: 60px !important;
+      margin: 0.2rem 0 !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] small, div[data-testid="stFileUploaderDropzone"] span { display: none !important; }
+    div[data-testid="stFileUploaderDropzone"]::after {
+      content: "Arraste e solte o arquivo aqui ou clique para selecionar";
+      display: block; color: #444; font-size: 11px; text-align: center; padding-top: 4px;
+    }
+    .controls-title { font-size: 12px !important; font-weight: 700; margin: 2px 0 2px 0 !important; }
+    .sub-mini { font-size: 11px !important; font-weight: 600; margin: 2px 0 1px 0 !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =======================
 # Estado
@@ -59,7 +58,9 @@ DEFAULT_KEYS = [
     'gdf_poligono', 'gdf_pontos', 'unidade_selecionada',
     'densidade_plantas', 'produtividade_media', 'map_fit_bounds',
     # novos flags
-    'add_mode', 'voice_mode', 'voice_value', 'last_click_token'
+    'add_mode', 'voice_mode', 'voice_value', 'last_click_token',
+    # tmp paths (mantidos entre execuções)
+    'tmp_save_dir', 'tmp_area_path', 'tmp_pontos_path', 'tmp_params_path'
 ]
 for k in DEFAULT_KEYS:
     if k not in st.session_state:
@@ -70,7 +71,6 @@ st.session_state.add_mode = bool(st.session_state.add_mode)
 st.session_state.voice_mode = bool(st.session_state.voice_mode)
 st.session_state.voice_value = st.session_state.voice_value if st.session_state.voice_value is not None else 0.0
 
-
 # =======================
 # Utilitários
 # =======================
@@ -78,7 +78,6 @@ def gerar_codigo():
     letras = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     numeros = ''.join(random.choices(string.digits, k=2))
     return f"{letras}-{numeros}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=4))}"
-
 
 def converter_para_kg(valor, unidade):
     if pd.isna(valor):
@@ -95,16 +94,15 @@ def converter_para_kg(valor, unidade):
         return v * 0.09
     return v
 
-
 def _fit_bounds_from_gdf(gdf):
-    b = gdf.total_bounds  
+    b = gdf.total_bounds
     return [[b[1], b[0]], [b[3], b[2]]]
-
 
 def _point_inside_area(lat, lon) -> bool:
     """Mais permissivo: aceita pontos dentro ou na borda (covers)"""
     if st.session_state.gdf_poligono is None:
-        return True  
+        return True
+
     poly = st.session_state.gdf_poligono.geometry.unary_union
     pt = Point(lon, lat)
     try:
@@ -113,30 +111,29 @@ def _point_inside_area(lat, lon) -> bool:
         # fallback conservador para evitar bloquear por erro de geometrias
         return True
 
-
 def create_map():
     if st.session_state.gdf_poligono is not None:
         m = folium.Map(
-            location=[0, 0], 
-            zoom_start=2, 
-            tiles=None, 
+            location=[0, 0],
+            zoom_start=2,
+            tiles=None,
             control_scale=True,
             zoom_control=True,
-            min_zoom=1,       
-            max_zoom=23,      
-            max_bounds=True   
+            min_zoom=1,
+            max_zoom=23,
+            max_bounds=True
         )
         bounds = _fit_bounds_from_gdf(st.session_state.gdf_poligono)
         st.session_state.map_fit_bounds = bounds
         try:
-            m.fit_bounds(bounds, padding=(20, 20), max_zoom=23)  
+            m.fit_bounds(bounds, padding=(20, 20), max_zoom=23)
         except Exception:
             pass
     else:
         m = folium.Map(
-            location=[-15, -55], 
-            zoom_start=4, 
-            tiles=None, 
+            location=[-15, -55],
+            zoom_start=4,
+            tiles=None,
             control_scale=True,
             zoom_control=True,
             min_zoom=1,
@@ -149,7 +146,7 @@ def create_map():
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri', name='Satélite', control=True, show=True
     ).add_to(m)
-    
+
     folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True, show=False).add_to(m)
 
     # desenho da área (polígono; agora marker sempre habilitado para garantir captura de cliques)
@@ -252,7 +249,6 @@ def processar_arquivo_carregado(uploaded_file, tipo='amostral'):
         st.exception(e)
         return None
 
-
 def salvar_no_streamlit_cloud():
     import os, json, time
 
@@ -263,7 +259,7 @@ def salvar_no_streamlit_cloud():
        st.session_state.get("produtividade_media") is None:
         st.warning("⚠️ Parâmetros de densidade e produtividade não definidos!")
         return
- 
+
     base_dir = "/tmp/streamlit_dados"
     os.makedirs(base_dir, exist_ok=True)
 
@@ -276,9 +272,11 @@ def salvar_no_streamlit_cloud():
     params_path = os.path.join(save_dir, "parametros_area.json")
 
     st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
-  
+
     if st.session_state.get("gdf_pontos") is not None and not st.session_state.gdf_pontos.empty:
-        st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
+        # Garantir GeoDataFrame e geometria
+        pontos_to_save = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
+        pontos_to_save.to_file(pontos_path, driver="GPKG")
 
     parametros = {
         "densidade_pes_ha": st.session_state.densidade_plantas,
@@ -286,7 +284,8 @@ def salvar_no_streamlit_cloud():
     }
     with open(params_path, "w") as f:
         json.dump(parametros, f)
- 
+
+    # Atualiza session_state com caminhos
     st.session_state["tmp_save_dir"]    = save_dir
     st.session_state["tmp_area_path"]   = area_path
     st.session_state["tmp_params_path"] = params_path
@@ -294,25 +293,38 @@ def salvar_no_streamlit_cloud():
         st.session_state["tmp_pontos_path"] = pontos_path
 
     st.success("✅ Dados salvos. Veja o mapa de produtividade.")
-
+    st.info(f"📁 Dados salvos em: `{save_dir}`")
 
 def salvar_pontos_marcados_temp():
-    """Salva os pontos atuais no local padrão para serem detectados por outras abas."""
+    """Salva os pontos atuais no local padrão para serem detectados por outras abas.
+       Correções: garante GeoDataFrame válido, grava geometry corretamente e retorna o caminho."""
     if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Não há pontos para salvar.")
         return None
-    
+
     base_dir = "/tmp/streamlit_dados"
     os.makedirs(base_dir, exist_ok=True)
-    # cria um subdiretório com timestamp compatível com o padrão
     carimbo = time.strftime("%Y%m%d-%H%M%S")
     save_dir = os.path.join(base_dir, f"salvamento-{carimbo}")
     os.makedirs(save_dir, exist_ok=True)
     pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
-    
+
     # GARANTIR que todos os dados estão salvos corretamente
     pontos_gdf = st.session_state.gdf_pontos.copy()
-    
+
+    # Converter para GeoDataFrame com coluna geometry válida
+    if not isinstance(pontos_gdf, gpd.GeoDataFrame):
+        if 'geometry' in pontos_gdf.columns:
+            pontos_gdf = gpd.GeoDataFrame(pontos_gdf, geometry='geometry', crs="EPSG:4326")
+        else:
+            # tenta construir geometry a partir de lon/lat
+            if ('longitude' in pontos_gdf.columns) and ('latitude' in pontos_gdf.columns):
+                pontos_gdf['geometry'] = pontos_gdf.apply(lambda r: Point(r['longitude'], r['latitude']), axis=1)
+                pontos_gdf = gpd.GeoDataFrame(pontos_gdf, geometry='geometry', crs="EPSG:4326")
+            else:
+                st.error("❌ Não foi possível determinar a geometria dos pontos.")
+                return None
+
     # Verificar e garantir colunas necessárias
     if 'valor' not in pontos_gdf.columns:
         pontos_gdf['valor'] = 0.0
@@ -320,18 +332,31 @@ def salvar_pontos_marcados_temp():
         pontos_gdf['unidade'] = st.session_state.unidade_selecionada
     if 'maduro_kg' not in pontos_gdf.columns:
         pontos_gdf['maduro_kg'] = pontos_gdf.apply(
-            lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')), 
+            lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')),
             axis=1
         )
-    
+
+    # Garantir latitude/longitude preenchidas
+    if 'latitude' not in pontos_gdf.columns or 'longitude' not in pontos_gdf.columns:
+        pontos_gdf['latitude'] = pontos_gdf.geometry.y
+        pontos_gdf['longitude'] = pontos_gdf.geometry.x
+
     # Salvar o arquivo
-    pontos_gdf.to_file(pontos_path, driver="GPKG")
-    
+    try:
+        pontos_gdf.to_file(pontos_path, driver="GPKG")
+    except Exception as e:
+        st.error(f"❌ Erro ao salvar pontos: {e}")
+        return None
+
     # se já houver área salva no session_state, grava também para consistência
     if st.session_state.get("gdf_poligono") is not None:
         area_path = os.path.join(save_dir, "area_amostral.gpkg")
-        st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
-    
+        try:
+            st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
+            st.session_state["tmp_area_path"] = area_path
+        except Exception as e:
+            st.warning(f"⚠️ Área não foi salva automaticamente: {e}")
+
     params_path = os.path.join(save_dir, "parametros_area.json")
     parametros = {
         "densidade_pes_ha": st.session_state.densidade_plantas,
@@ -339,22 +364,22 @@ def salvar_pontos_marcados_temp():
     }
     with open(params_path, "w") as f:
         json.dump(parametros, f)
-    
+
     # atualiza session_state para que outras abas detectem
     st.session_state["tmp_save_dir"] = save_dir
     st.session_state["tmp_pontos_path"] = pontos_path
     st.session_state["tmp_area_path"] = os.path.join(save_dir, "area_amostral.gpkg") if st.session_state.get("gdf_poligono") is not None else None
     st.session_state["tmp_params_path"] = params_path
-    
-    return save_dir
 
+    # Retorna o diretório salvo para o chamador exibir ao usuário
+    return save_dir
 
 def exportar_dados():
     """Função para exportar dados que estava faltando no código original"""
     if st.session_state.get("gdf_poligono") is None:
         st.warning("⚠️ Nenhuma área amostral definida para exportar!")
         return
-        
+
     if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Nenhum ponto de produtividade para exportar!")
         return
@@ -367,12 +392,12 @@ def exportar_dados():
             area_temp = "/tmp/area_export.gpkg"
             st.session_state.gdf_poligono.to_file(area_temp, driver="GPKG")
             zip_file.write(area_temp, "area_amostral.gpkg")
-            
+
             # Salvar pontos de produtividade
             pontos_temp = "/tmp/pontos_export.gpkg"
             st.session_state.gdf_pontos.to_file(pontos_temp, driver="GPKG")
             zip_file.write(pontos_temp, "pontos_produtividade.gpkg")
-            
+
             # Salvar parâmetros
             params_temp = "/tmp/parametros.json"
             parametros = {
@@ -383,12 +408,12 @@ def exportar_dados():
             with open(params_temp, 'w') as f:
                 json.dump(parametros, f)
             zip_file.write(params_temp, "parametros_area.json")
-            
+
             # Limpar arquivos temporários
             os.remove(area_temp)
             os.remove(pontos_temp)
             os.remove(params_temp)
-        
+
         # Preparar download
         zip_buffer.seek(0)
         st.download_button(
@@ -398,12 +423,11 @@ def exportar_dados():
             mime="application/zip",
             key="download_zip"
         )
-        
+
         st.success("✅ Dados preparados para exportação!")
-        
+
     except Exception as e:
         st.error(f"❌ Erro ao exportar dados: {e}")
-
 
 # Inserção/edição de pontos
 def _ensure_points_df():
@@ -415,17 +439,16 @@ def _ensure_points_df():
         )
     return st.session_state.gdf_pontos is not None
 
-
 def _add_point(lat, lon, metodo, valor=None):
     # Garante que o DataFrame de pontos existe
     _ensure_points_df()
-    
+
     if not _point_inside_area(lat, lon):
         st.warning("⚠️ Clique fora da área amostral. Ponto ignorado.")
         return False
-    
+
     valor = float(valor) if (valor is not None and str(valor).strip() != "") else 0.0
-    
+
     # Cria novo ponto
     novo_ponto = {
         'geometry': Point(lon, lat),
@@ -438,7 +461,7 @@ def _add_point(lat, lon, metodo, valor=None):
         'longitude': lon,
         'metodo': metodo
     }
-    
+
     # Adiciona o novo ponto ao GeoDataFrame
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
@@ -446,25 +469,26 @@ def _add_point(lat, lon, metodo, valor=None):
         novo_df = pd.DataFrame([novo_ponto])
         st.session_state.gdf_pontos = pd.concat([st.session_state.gdf_pontos, novo_df], ignore_index=True)
         st.session_state.gdf_pontos = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
-    
+
     # Força persistência na sessão
     st.session_state.gdf_pontos = st.session_state.gdf_pontos
     return True
 
-
 def inserir_produtividade():
-    if (st.session_state.gdf_pontos is None or 
-        st.session_state.gdf_pontos.empty or 
-        len(st.session_state.gdf_pontos) == 0):
+    if (st.session_state.gdf_pontos is None or
+         st.session_state.gdf_pontos.empty or
+         len(st.session_state.gdf_pontos) == 0):
         st.warning("⚠️ Nenhum ponto disponível! Adicione pontos no mapa primeiro usando o modo 'Adicionar pontos no clique'.")
         return
-    
-    gdf = st.session_state.gdf_pontos.copy()  # Trabalhar com cópia
+
+    # Trabalhar com cópia para edição antes de salvar na sessão
+    gdf = gpd.GeoDataFrame(st.session_state.gdf_pontos.copy(), geometry='geometry', crs="EPSG:4326")
     unidade = st.session_state.unidade_selecionada or "kg"
     st.markdown(f"**Inserir/editar produtividade** — unidade atual: `{unidade}`")
     st.success(f"📊 **Total de pontos disponíveis para edição: {len(gdf)}**")
 
-    for idx, row in gdf.iterrows():
+    # Preparar keys iniciais caso não existam
+    for idx, row in gdf.reset_index(drop=True).iterrows():
         key = f"valor_pt_{idx}"
         if key not in st.session_state:
             current_val = row.get("valor", 0.0)
@@ -476,45 +500,55 @@ def inserir_produtividade():
     with st.form("form_produtividade", clear_on_submit=False):
         st.subheader(f"Editar {len(gdf)} pontos")
         cols = st.columns(3)
-        for idx, row in gdf.iterrows():
+        for idx, row in gdf.reset_index(drop=True).iterrows():
             col = cols[idx % 3]
             with col:
                 current_value = st.session_state.get(f"valor_pt_{idx}", 0.0)
                 st.number_input(
-                    f"📍 Ponto {idx+1} ({row['Code']})",
+                    f"📍 Ponto {idx+1} ({row.get('Code','')})",
                     key=f"valor_pt_{idx}",
                     value=float(current_value),
                     min_value=0.0,
                     step=0.01,
                     format="%.2f",
-                    help=f"Lat: {row['latitude']:.4f}, Lon: {row['longitude']:.4f}"
+                    help=f"Lat: {row['latitude']:.6f}, Lon: {row['longitude']:.6f}"
                 )
         submitted = st.form_submit_button("💾 Salvar todas as produtividades", type="primary")
 
     if submitted:
-        pontos_atualizados = 0
-        for idx in gdf.index:
+        # Atualiza valores na cópia gdf (índices reindexados)
+        updated_count = 0
+        gdf_for_save = gdf.reset_index(drop=True).copy()
+        for idx in gdf_for_save.index:
             v = float(st.session_state.get(f"valor_pt_{idx}", 0.0))
-            gdf.at[idx, "valor"] = v
-            gdf.at[idx, "unidade"] = unidade
-            gdf.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
-            pontos_atualizados += 1
-        
-        # ATUALIZAÇÃO CRÍTICA: Garantir que os dados são salvos corretamente
-        st.session_state.gdf_pontos = gpd.GeoDataFrame(gdf, geometry='geometry', crs="EPSG:4326")
-        
-        # SALVAR IMEDIATAMENTE após edição
+            gdf_for_save.at[idx, "valor"] = v
+            gdf_for_save.at[idx, "unidade"] = unidade
+            gdf_for_save.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
+            updated_count += 1
+
+        # Conservar geometry e converter para GeoDataFrame antes de gravar na sessão
+        try:
+            gdf_for_save = gpd.GeoDataFrame(gdf_for_save, geometry='geometry', crs="EPSG:4326")
+        except Exception:
+            # Tenta reconstruir geometry se ocorreu perda
+            if 'longitude' in gdf_for_save.columns and 'latitude' in gdf_for_save.columns:
+                gdf_for_save['geometry'] = gdf_for_save.apply(lambda r: Point(r['longitude'], r['latitude']), axis=1)
+                gdf_for_save = gpd.GeoDataFrame(gdf_for_save, geometry='geometry', crs="EPSG:4326")
+
+        # ATUALIZAÇÃO CRÍTICA: Garantir que os dados são salvos corretamente no session_state
+        st.session_state.gdf_pontos = gdf_for_save
+
+        # SALVAR IMEDIATAMENTE após edição e recuperar o caminho
         save_dir = salvar_pontos_marcados_temp()
-        
+
         if save_dir:
-            st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos!")
+            st.success(f"✅ Produtividades salvas para {updated_count} pontos!")
             st.info(f"📁 **Dados salvos automaticamente em:** `{save_dir}`")
             st.info("💡 **Os dados já estão disponíveis para exportação e análise!**")
         else:
             st.error("❌ Erro ao salvar os dados na nuvem!")
-        
-        time.sleep(2)
-        st.rerun()
+
+        # não forçar rerun imediato para que o usuário veja a mensagem e o caminho do salvamento
 
 # Layout
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
@@ -544,12 +578,12 @@ if mapa_data and mapa_data.get('last_active_drawing'):
             time.sleep(0.15)
             st.rerun()
 
-# Clique simples no mapa 
+# Clique simples no mapa
 if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
     lat = mapa_data["last_clicked"]["lat"]
     lon = mapa_data["last_clicked"]["lng"]
     token = f"{lat:.6f},{lon:.6f}"
-    
+
     # Verifica se é um clique novo (não duplicado)
     if token != st.session_state.get("last_click_token", None):
         valor = st.session_state.voice_value if st.session_state.voice_mode else 0.0
@@ -567,7 +601,7 @@ if st.session_state.add_mode and mapa_data and mapa_data.get("last_clicked"):
         time.sleep(0.2)
         st.rerun()
 
-# --- Uploads 
+# --- Uploads
 st.markdown('<div class="sub-mini">Uploads (opcional)</div>', unsafe_allow_html=True)
 u1, u2 = st.columns(2)
 with u1:
@@ -579,7 +613,7 @@ with u2:
     if uploaded_pontos:
         processar_arquivo_carregado(uploaded_pontos, tipo='pontos')
 
-# --- Controles 
+# --- Controles
 a1, a2, a3, a4 = st.columns([1, 1, 1, 1])
 with a1:
     if st.button("🧭 Definir área amostral"):
@@ -634,7 +668,6 @@ with b2:
                 st.warning(f"Não foi possível transcrever o áudio: {e}")
     else:
         st.caption("Ative o modo voz para gravar o número; no próximo clique no mapa o ponto é criado com esse valor.")
-
 with b3:
     st.markdown("**Parâmetros da área**")
     st.session_state.densidade_plantas = st.number_input(
@@ -683,9 +716,3 @@ with c3:
 with c4:
     if st.button("☁️ Salvar dados na nuvem"):
         salvar_no_streamlit_cloud()
-
-st.markdown("")  
-if st.button("💾 Salvar pontos marcados"):
-    save_dir = salvar_pontos_marcados_temp()
-    if save_dir:
-        st.success(f"✅ Pontos salvos em: `{save_dir}`")
