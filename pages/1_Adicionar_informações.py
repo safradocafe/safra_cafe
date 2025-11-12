@@ -278,7 +278,33 @@ def salvar_no_streamlit_cloud():
     st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
   
     if st.session_state.get("gdf_pontos") is not None and not st.session_state.gdf_pontos.empty:
-        st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
+        # Garante que todas as colunas necessárias estão presentes
+        pontos_gdf = st.session_state.gdf_pontos.copy()
+        
+        # Verifica e adiciona colunas ausentes para manter compatibilidade
+        colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry', 
+                              'valor', 'unidade', 'coletado', 'metodo']
+        
+        for coluna in colunas_necessarias:
+            if coluna not in pontos_gdf.columns:
+                if coluna == 'valor':
+                    pontos_gdf['valor'] = 0.0
+                elif coluna == 'unidade':
+                    pontos_gdf['unidade'] = st.session_state.unidade_selecionada
+                elif coluna == 'maduro_kg':
+                    pontos_gdf['maduro_kg'] = pontos_gdf.apply(
+                        lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')), 
+                        axis=1
+                    )
+                elif coluna == 'coletado':
+                    pontos_gdf['coletado'] = False
+                elif coluna == 'metodo':
+                    pontos_gdf['metodo'] = 'manual'
+                elif coluna in ['latitude', 'longitude']:
+                    pontos_gdf['latitude'] = pontos_gdf.geometry.y
+                    pontos_gdf['longitude'] = pontos_gdf.geometry.x
+        
+        pontos_gdf.to_file(pontos_path, driver="GPKG")
 
     parametros = {
         "densidade_pes_ha": st.session_state.densidade_plantas,
@@ -307,8 +333,34 @@ def salvar_pontos_marcados_temp():
     carimbo = time.strftime("%Y%m%d-%H%M%S")
     save_dir = os.path.join(base_dir, f"salvamento-{carimbo}")
     os.makedirs(save_dir, exist_ok=True)
+    
+    # Garante que todas as colunas necessárias estão presentes antes de salvar
+    pontos_gdf = st.session_state.gdf_pontos.copy()
+    colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry', 
+                          'valor', 'unidade', 'coletado', 'metodo']
+    
+    for coluna in colunas_necessarias:
+        if coluna not in pontos_gdf.columns:
+            if coluna == 'valor':
+                pontos_gdf['valor'] = 0.0
+            elif coluna == 'unidade':
+                pontos_gdf['unidade'] = st.session_state.unidade_selecionada
+            elif coluna == 'maduro_kg':
+                pontos_gdf['maduro_kg'] = pontos_gdf.apply(
+                    lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')), 
+                    axis=1
+                )
+            elif coluna == 'coletado':
+                pontos_gdf['coletado'] = False
+            elif coluna == 'metodo':
+                pontos_gdf['metodo'] = 'manual'
+            elif coluna in ['latitude', 'longitude']:
+                pontos_gdf['latitude'] = pontos_gdf.geometry.y
+                pontos_gdf['longitude'] = pontos_gdf.geometry.x
+    
     pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
-    st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
+    pontos_gdf.to_file(pontos_path, driver="GPKG")
+    
     # se já houver área salva no session_state, grava também para consistência
     if st.session_state.get("gdf_poligono") is not None:
         area_path = os.path.join(save_dir, "area_amostral.gpkg")
@@ -326,6 +378,87 @@ def salvar_pontos_marcados_temp():
     st.session_state["tmp_area_path"] = os.path.join(save_dir, "area_amostral.gpkg") if st.session_state.get("gdf_poligono") is not None else None
     st.session_state["tmp_params_path"] = params_path
     st.success(f"✅ Pontos salvos em: {save_dir}")
+
+
+def exportar_dados():
+    """Função para exportar dados que estava faltando no código original"""
+    if st.session_state.get("gdf_poligono") is None:
+        st.warning("⚠️ Nenhuma área amostral definida para exportar!")
+        return
+        
+    if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
+        st.warning("⚠️ Nenhum ponto de produtividade para exportar!")
+        return
+
+    try:
+        # Criar arquivo ZIP com todos os dados
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Salvar área amostral
+            area_temp = "/tmp/area_export.gpkg"
+            st.session_state.gdf_poligono.to_file(area_temp, driver="GPKG")
+            zip_file.write(area_temp, "area_amostral.gpkg")
+            
+            # Salvar pontos de produtividade (garantindo todas as colunas necessárias)
+            pontos_temp = "/tmp/pontos_export.gpkg"
+            pontos_gdf = st.session_state.gdf_pontos.copy()
+            
+            # Garante colunas necessárias
+            colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry', 
+                                  'valor', 'unidade', 'coletado', 'metodo']
+            
+            for coluna in colunas_necessarias:
+                if coluna not in pontos_gdf.columns:
+                    if coluna == 'valor':
+                        pontos_gdf['valor'] = 0.0
+                    elif coluna == 'unidade':
+                        pontos_gdf['unidade'] = st.session_state.unidade_selecionada
+                    elif coluna == 'maduro_kg':
+                        pontos_gdf['maduro_kg'] = pontos_gdf.apply(
+                            lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')), 
+                            axis=1
+                        )
+                    elif coluna == 'coletado':
+                        pontos_gdf['coletado'] = False
+                    elif coluna == 'metodo':
+                        pontos_gdf['metodo'] = 'manual'
+                    elif coluna in ['latitude', 'longitude']:
+                        pontos_gdf['latitude'] = pontos_gdf.geometry.y
+                        pontos_gdf['longitude'] = pontos_gdf.geometry.x
+            
+            pontos_gdf.to_file(pontos_temp, driver="GPKG")
+            zip_file.write(pontos_temp, "pontos_produtividade.gpkg")
+            
+            # Salvar parâmetros
+            params_temp = "/tmp/parametros.json"
+            parametros = {
+                "densidade_pes_ha": st.session_state.densidade_plantas,
+                "produtividade_media_sacas_ha": st.session_state.produtividade_media,
+                "unidade_selecionada": st.session_state.unidade_selecionada
+            }
+            with open(params_temp, 'w') as f:
+                json.dump(parametros, f)
+            zip_file.write(params_temp, "parametros_area.json")
+            
+            # Limpar arquivos temporários
+            os.remove(area_temp)
+            os.remove(pontos_temp)
+            os.remove(params_temp)
+        
+        # Preparar download
+        zip_buffer.seek(0)
+        st.download_button(
+            label="📥 Baixar dados exportados (ZIP)",
+            data=zip_buffer,
+            file_name=f"dados_produtividade_{time.strftime('%Y%m%d-%H%M%S')}.zip",
+            mime="application/zip",
+            key="download_zip"
+        )
+        
+        st.success("✅ Dados preparados para exportação!")
+        
+    except Exception as e:
+        st.error(f"❌ Erro ao exportar dados: {e}")
 
 
 # Inserção/edição de pontos
@@ -591,7 +724,7 @@ with c2:
         inserir_produtividade()
 with c3:
     if st.button("💾 Exportar dados"):
-        exportar_dados()
+        exportar_dados()  # Agora esta função está definida
 with c4:
     if st.button("☁️ Salvar dados na nuvem"):
         salvar_no_streamlit_cloud()
