@@ -454,44 +454,57 @@ def inserir_produtividade():
     st.markdown(f"**Inserir/editar produtividade** — unidade atual: `{unidade}`")
     st.success(f"📊 **Total de pontos disponíveis para edição: {len(gdf)}**")
 
-    # INICIALIZAÇÃO: Garantir que todas as keys existam
+    # SOLUÇÃO: Usar um dicionário próprio para armazenar os valores durante a sessão
+    if 'valores_produtividade' not in st.session_state:
+        st.session_state.valores_produtividade = {}
+    
+    # Inicializar valores com os dados atuais
     for idx, row in gdf.reset_index(drop=True).iterrows():
-        key = f"valor_pt_{idx}"
-        if key not in st.session_state:
+        if idx not in st.session_state.valores_produtividade:
             current_val = row.get("maduro_kg", 0.0)
-            try:
-                st.session_state[key] = float(current_val) if pd.notna(current_val) else 0.0
-            except (ValueError, TypeError):
-                st.session_state[key] = 0.0
+            st.session_state.valores_produtividade[idx] = float(current_val) if pd.notna(current_val) else 0.0
 
-    with st.form("form_produtividade", clear_on_submit=True):
+    # Criar os campos de entrada
+    with st.form("form_produtividade", clear_on_submit=False):
         st.subheader(f"Editar {len(gdf)} pontos")
         cols = st.columns(3)
+        
+        valores_atuais = {}  # Armazenar valores atuais do formulário
         
         for idx, row in gdf.reset_index(drop=True).iterrows():
             col = cols[idx % 3]
             with col:
-                current_value = st.session_state.get(f"valor_pt_{idx}", 0.0)
-                st.number_input(
+                # Usar o valor atual do session_state como padrão
+                valor_atual = st.session_state.valores_produtividade.get(idx, 0.0)
+                
+                # Criar campo de entrada - a chave única garante que o valor seja capturado
+                novo_valor = st.number_input(
                     f"📍 Ponto {idx+1} ({row.get('Code','')})",
-                    key=f"valor_pt_{idx}",
-                    value=float(current_value),
+                    key=f"prod_input_{idx}_{time.time()}",  # Chave única para forçar captura
+                    value=float(valor_atual),
                     min_value=0.0,
                     step=0.01,
                     format="%.2f",
                     help=f"Produtividade atual: {row.get('maduro_kg', 0):.2f} kg | Lat: {row['latitude']:.6f}, Lon: {row['longitude']:.6f}"
                 )
+                
+                # Armazenar imediatamente no session_state
+                st.session_state.valores_produtividade[idx] = novo_valor
+                valores_atuais[idx] = novo_valor
         
         submitted = st.form_submit_button("💾 Salvar todas as produtividades", type="primary")
 
-    # PROCESSAMENTO APÓS SUBMIT
+    # PROCESSAMENTO APÓS SUBMIT - SOLUÇÃO ROBUSTA
     if submitted:
-        # Atualizar valores no GeoDataFrame
+        st.info("🔄 Processando dados...")
+        
+        # Atualizar valores no GeoDataFrame usando os valores do session_state
         updated_count = 0
         gdf_for_save = gdf.reset_index(drop=True).copy()
         
         for idx in gdf_for_save.index:
-            v = float(st.session_state.get(f"valor_pt_{idx}", 0.0))
+            # Usar diretamente os valores do session_state que foram atualizados durante a renderização
+            v = st.session_state.valores_produtividade.get(idx, 0.0)
             gdf_for_save.at[idx, "maduro_kg"] = v
             updated_count += 1
 
@@ -503,23 +516,34 @@ def inserir_produtividade():
                 gdf_for_save['geometry'] = gdf_for_save.apply(lambda r: Point(r['longitude'], r['latitude']), axis=1)
                 gdf_for_save = gpd.GeoDataFrame(gdf_for_save, geometry='geometry', crs="EPSG:4326")
        
-        # ATUALIZAR SESSION STATE
+        # ATUALIZAR SESSION STATE com os novos dados
         st.session_state.gdf_pontos = gdf_for_save
       
-        # SALVAMENTO CRÍTICO na nuvem temporária
+        # SALVAMENTO IMEDIATO E VERIFICAÇÃO
         save_dir = salvar_produtividade_temp()
 
         if save_dir:
-            st.success(f"✅ Dados salvos na nuvem para {updated_count} pontos!")
-            st.info("🌐 **Os dados estão armazenados temporariamente na nuvem e disponíveis para todas as análises**")
-            
-            # Verificação extra - mostrar preview dos dados salvos
-            st.subheader("📋 Confirmação dos Dados Salvos")
-            dados_salvos = gpd.read_file(st.session_state.tmp_pontos_path)
-            st.dataframe(dados_salvos[['Code', 'maduro_kg', 'latitude', 'longitude']].head(10))
+            # Verificação extra: confirmar que os dados foram realmente salvos
+            try:
+                dados_verificados = gpd.read_file(st.session_state.tmp_pontos_path)
+                valores_salvos = dados_verificados['maduro_kg'].tolist()
+                
+                st.success(f"✅ Dados salvos com sucesso para {updated_count} pontos!")
+                st.info(f"🌐 **Valores salvos na nuvem:** {valores_salvos}")
+                
+                # Mostrar tabela de confirmação
+                st.subheader("📋 Confirmação dos Dados Salvos")
+                st.dataframe(dados_verificados[['Code', 'maduro_kg', 'latitude', 'longitude']])
+                
+            except Exception as e:
+                st.error(f"❌ ERRO na verificação: {e}")
             
         else:
-            st.error("❌ ERRO: Dados não foram salvos na nuvem!")
+            st.error("❌ ERRO CRÍTICO: Dados não foram salvos na nuvem!")
+
+        # Forçar rerun para atualizar a interface
+        time.sleep(1)
+        st.rerun()
 
 # Layout principal
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
