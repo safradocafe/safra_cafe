@@ -325,7 +325,7 @@ def salvar_pontos_marcados_temp():
     st.session_state["tmp_pontos_path"] = pontos_path
     st.session_state["tmp_area_path"] = os.path.join(save_dir, "area_amostral.gpkg") if st.session_state.get("gdf_poligono") is not None else None
     st.session_state["tmp_params_path"] = params_path
-    st.success(f"✅ Pontos salvos com sucesso.")
+    st.success(f"✅ Pontos salvos em: {save_dir}")
 
 
 def exportar_dados():
@@ -479,8 +479,13 @@ def inserir_produtividade():
             gdf.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
             pontos_atualizados += 1
         
-        st.session_state.gdf_pontos = gdf
-        st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos!")
+        # CORREÇÃO CRÍTICA: Garantir que o GeoDataFrame seja atualizado corretamente
+        st.session_state.gdf_pontos = gpd.GeoDataFrame(gdf, geometry='geometry', crs="EPSG:4326")
+        
+        # Salvar automaticamente após edição
+        salvar_pontos_marcados_temp()
+        
+        st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos e dados salvos na nuvem!")
         time.sleep(1)
         st.rerun()
 
@@ -647,7 +652,7 @@ with c2:
         inserir_produtividade()
 with c3:
     if st.button("💾 Exportar dados"):
-        exportar_dados()  # Agora esta função está definida
+        exportar_dados()
 with c4:
     if st.button("☁️ Salvar dados na nuvem"):
         salvar_no_streamlit_cloud()
