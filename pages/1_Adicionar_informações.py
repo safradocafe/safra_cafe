@@ -325,7 +325,7 @@ def salvar_pontos_marcados_temp():
     st.session_state["tmp_pontos_path"] = pontos_path
     st.session_state["tmp_area_path"] = os.path.join(save_dir, "area_amostral.gpkg") if st.session_state.get("gdf_poligono") is not None else None
     st.session_state["tmp_params_path"] = params_path
-    st.success(f"✅ Pontos salvos em: {save_dir}")
+    st.success(f"✅ Pontos salvos com sucesso.")
 
 
 def exportar_dados():
