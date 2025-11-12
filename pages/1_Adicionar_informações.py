@@ -148,7 +148,6 @@ def create_map():
 
     folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True, show=False).add_to(m)
 
-    # desenho da área (polígono; agora marker sempre habilitado para garantir captura de cliques)
     folium.plugins.Draw(
         draw_options={
             'polyline': False, 'rectangle': True, 'circle': False,
