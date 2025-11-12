@@ -300,7 +300,8 @@ def salvar_pontos_marcados_temp():
     """Salva os pontos atuais no local padrão para serem detectados por outras abas."""
     if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Não há pontos para salvar.")
-        return
+        return None
+    
     base_dir = "/tmp/streamlit_dados"
     os.makedirs(base_dir, exist_ok=True)
     # cria um subdiretório com timestamp compatível com o padrão
@@ -308,11 +309,29 @@ def salvar_pontos_marcados_temp():
     save_dir = os.path.join(base_dir, f"salvamento-{carimbo}")
     os.makedirs(save_dir, exist_ok=True)
     pontos_path = os.path.join(save_dir, "pontos_produtividade.gpkg")
-    st.session_state.gdf_pontos.to_file(pontos_path, driver="GPKG")
+    
+    # GARANTIR que todos os dados estão salvos corretamente
+    pontos_gdf = st.session_state.gdf_pontos.copy()
+    
+    # Verificar e garantir colunas necessárias
+    if 'valor' not in pontos_gdf.columns:
+        pontos_gdf['valor'] = 0.0
+    if 'unidade' not in pontos_gdf.columns:
+        pontos_gdf['unidade'] = st.session_state.unidade_selecionada
+    if 'maduro_kg' not in pontos_gdf.columns:
+        pontos_gdf['maduro_kg'] = pontos_gdf.apply(
+            lambda row: converter_para_kg(row.get('valor', 0.0), row.get('unidade', 'kg')), 
+            axis=1
+        )
+    
+    # Salvar o arquivo
+    pontos_gdf.to_file(pontos_path, driver="GPKG")
+    
     # se já houver área salva no session_state, grava também para consistência
     if st.session_state.get("gdf_poligono") is not None:
         area_path = os.path.join(save_dir, "area_amostral.gpkg")
         st.session_state.gdf_poligono.to_file(area_path, driver="GPKG")
+    
     params_path = os.path.join(save_dir, "parametros_area.json")
     parametros = {
         "densidade_pes_ha": st.session_state.densidade_plantas,
@@ -320,12 +339,14 @@ def salvar_pontos_marcados_temp():
     }
     with open(params_path, "w") as f:
         json.dump(parametros, f)
+    
     # atualiza session_state para que outras abas detectem
     st.session_state["tmp_save_dir"] = save_dir
     st.session_state["tmp_pontos_path"] = pontos_path
     st.session_state["tmp_area_path"] = os.path.join(save_dir, "area_amostral.gpkg") if st.session_state.get("gdf_poligono") is not None else None
     st.session_state["tmp_params_path"] = params_path
-    st.success(f"✅ Pontos salvos em: {save_dir}")
+    
+    return save_dir
 
 
 def exportar_dados():
@@ -438,7 +459,7 @@ def inserir_produtividade():
         st.warning("⚠️ Nenhum ponto disponível! Adicione pontos no mapa primeiro usando o modo 'Adicionar pontos no clique'.")
         return
     
-    gdf = st.session_state.gdf_pontos
+    gdf = st.session_state.gdf_pontos.copy()  # Trabalhar com cópia
     unidade = st.session_state.unidade_selecionada or "kg"
     st.markdown(f"**Inserir/editar produtividade** — unidade atual: `{unidade}`")
     st.success(f"📊 **Total de pontos disponíveis para edição: {len(gdf)}**")
@@ -479,14 +500,20 @@ def inserir_produtividade():
             gdf.at[idx, "maduro_kg"] = converter_para_kg(v, unidade)
             pontos_atualizados += 1
         
-        # CORREÇÃO CRÍTICA: Garantir que o GeoDataFrame seja atualizado corretamente
+        # ATUALIZAÇÃO CRÍTICA: Garantir que os dados são salvos corretamente
         st.session_state.gdf_pontos = gpd.GeoDataFrame(gdf, geometry='geometry', crs="EPSG:4326")
         
-        # Salvar automaticamente após edição
-        salvar_pontos_marcados_temp()
+        # SALVAR IMEDIATAMENTE após edição
+        save_dir = salvar_pontos_marcados_temp()
         
-        st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos e dados salvos na nuvem!")
-        time.sleep(1)
+        if save_dir:
+            st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos!")
+            st.info(f"📁 **Dados salvos automaticamente em:** `{save_dir}`")
+            st.info("💡 **Os dados já estão disponíveis para exportação e análise!**")
+        else:
+            st.error("❌ Erro ao salvar os dados na nuvem!")
+        
+        time.sleep(2)
         st.rerun()
 
 # Layout
@@ -659,4 +686,6 @@ with c4:
 
 st.markdown("")  
 if st.button("💾 Salvar pontos marcados"):
-    salvar_pontos_marcados_temp()
+    save_dir = salvar_pontos_marcados_temp()
+    if save_dir:
+        st.success(f"✅ Pontos salvos em: `{save_dir}`")
