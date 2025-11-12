@@ -292,10 +292,10 @@ def salvar_no_streamlit_cloud():
     if os.path.exists(pontos_path):
         st.session_state["tmp_pontos_path"] = pontos_path
 
-    st.success("✅ Dados salvos. Siga adiante!") 
+    st.success("✅ Dados salvos. Siga adiante!")
 
-def salvar_pontos_marcados_temp():
-    """Salva os pontos atuais no local padrão para serem detectados por outras abas."""
+def salvar_produtividade_temp():
+    """Salva os pontos E dados de produtividade atuais para serem detectados por outras abas."""
     if st.session_state.get("gdf_pontos") is None or st.session_state.gdf_pontos.empty:
         st.warning("⚠️ Não há pontos para salvar.")
         return None
@@ -323,8 +323,10 @@ def salvar_pontos_marcados_temp():
                 st.error("❌ Não foi possível determinar a geometria dos pontos.")
                 return None
 
-    # Garantir apenas as colunas necessárias
+    # Garantir todas as colunas necessárias incluindo dados de produtividade
     colunas_necessarias = ['Code', 'maduro_kg', 'latitude', 'longitude', 'geometry']
+    
+    # Verificar e preencher colunas faltantes
     for col in colunas_necessarias:
         if col not in pontos_gdf.columns:
             if col == 'latitude' and 'geometry' in pontos_gdf.columns:
@@ -332,18 +334,23 @@ def salvar_pontos_marcados_temp():
             elif col == 'longitude' and 'geometry' in pontos_gdf.columns:
                 pontos_gdf['longitude'] = pontos_gdf.geometry.x
             elif col == 'maduro_kg':
-                pontos_gdf['maduro_kg'] = 0.0
+                # Garantir que a coluna de produtividade existe e tem valores
+                pontos_gdf['maduro_kg'] = pontos_gdf.get('maduro_kg', 0.0)
             elif col == 'Code':
                 pontos_gdf['Code'] = [gerar_codigo() for _ in range(len(pontos_gdf))]
 
+    # Garantir que maduro_kg tem valores válidos (não NaN)
+    pontos_gdf['maduro_kg'] = pontos_gdf['maduro_kg'].fillna(0.0)
+    
     # Manter apenas colunas necessárias
     pontos_gdf = pontos_gdf[colunas_necessarias]
 
-    # Salvar o arquivo
+    # Salvar o arquivo com os dados de produtividade
     try:
         pontos_gdf.to_file(pontos_path, driver="GPKG")
+        st.success(f"✅ Dados de produtividade salvos para {len(pontos_gdf)} pontos!")
     except Exception as e:
-        st.error(f"❌ Erro ao salvar pontos: {e}")
+        st.error(f"❌ Erro ao salvar dados de produtividade: {e}")
         return None
 
     # se já houver área salva no session_state, grava também para consistência
@@ -359,6 +366,8 @@ def salvar_pontos_marcados_temp():
     parametros = {
         "densidade_pes_ha": st.session_state.densidade_plantas,
         "produtividade_media_sacas_ha": st.session_state.produtividade_media,
+        "total_pontos": len(pontos_gdf),
+        "unidade_selecionada": st.session_state.unidade_selecionada
     }
     with open(params_path, "w") as f:
         json.dump(parametros, f)
@@ -467,8 +476,9 @@ def _add_point(lat, lon, valor=None):
         st.session_state.gdf_pontos = pd.concat([st.session_state.gdf_pontos, novo_df], ignore_index=True)
         st.session_state.gdf_pontos = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
 
-    # Força persistência na sessão
-    st.session_state.gdf_pontos = st.session_state.gdf_pontos
+    # Salva automaticamente os dados de produtividade
+    salvar_produtividade_temp()
+    
     return True
 
 def inserir_produtividade():
@@ -529,21 +539,19 @@ def inserir_produtividade():
             if 'longitude' in gdf_for_save.columns and 'latitude' in gdf_for_save.columns:
                 gdf_for_save['geometry'] = gdf_for_save.apply(lambda r: Point(r['longitude'], r['latitude']), axis=1)
                 gdf_for_save = gpd.GeoDataFrame(gdf_for_save, geometry='geometry', crs="EPSG:4326")
-
+       
         # ATUALIZAÇÃO CRÍTICA: Garantir que os dados são salvos corretamente no session_state
         st.session_state.gdf_pontos = gdf_for_save
-
-        # SALVAR IMEDIATAMENTE após edição e recuperar o caminho
-        save_dir = salvar_pontos_marcados_temp()
+      
+        # SALVAR IMEDIATAMENTE após edição usando a nova função
+        save_dir = salvar_produtividade_temp()
 
         if save_dir:
             st.success(f"✅ Produtividades salvas para {updated_count} pontos!")
             st.info(f"📁 **Dados salvos automaticamente em:** `{save_dir}`")
-            st.info("💡 **Os dados já estão disponíveis para exportação e análise!**")
+            st.info("💡 **Os dados de produtividade já estão disponíveis para exportação e análise!**")
         else:
-            st.error("❌ Erro ao salvar os dados na nuvem!")
-
-        # não forçar rerun imediato para que o usuário veja a mensagem e o caminho do salvamento
+            st.error("❌ Erro ao salvar os dados de produtividade!")
 
 # Layout
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
@@ -553,7 +561,6 @@ mapa_data = st_folium(mapa, use_container_width=True, height=520, key='mapa_prin
 
 if mapa_data and mapa_data.get('last_active_drawing'):
     geometry = mapa_data['last_active_drawing']['geometry']
-    # Se foi desenhado um polígono, mantemos o comportamento anterior
     if geometry.get('type') in ('Polygon', 'MultiPolygon'):
         gdf = gpd.GeoDataFrame(geometry=[shape(geometry)], crs="EPSG:4326")
         st.session_state.gdf_poligono = gdf
@@ -685,15 +692,4 @@ with c1:
             gdf_p['Code'] = [gerar_codigo() for _ in range(len(gdf_p))]
             gdf_p['maduro_kg'] = 0.0
             gdf_p['latitude'] = gdf_p.geometry.y
-            gdf_p['longitude'] = gdf_p.geometry.x
-            st.session_state.gdf_pontos = gdf_p
-            st.success(f"{len(gdf_p)} pontos gerados automaticamente!")
-with c2:
-    if st.button("📝 Inserir/editar produtividade"):
-        inserir_produtividade()
-with c3:
-    if st.button("💾 Exportar dados"):
-        exportar_dados()
-with c4:
-    if st.button("☁️ Salvar dados na nuvem"):
-        salvar_no_streamlit_cloud()
+            gdf_p['longitude
