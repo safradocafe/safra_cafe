@@ -109,11 +109,11 @@ PALETTES = {
 }
 
 INDEX_RANGES = {
-    "NDVI":   dict(min=0.0, max=1.0),
-    "GNDVI":  dict(min=0.0, max=1.0),
-    "NDRE":   dict(min=0.0, max=0.5),
-    "CCCI":   dict(min=0.0, max=2.0),
-    "MSAVI2": dict(min=0.0, max=1.0),
+    "NDVI":   dict(min=-1.0, max=1.0),
+    "GNDVI":  dict(min=-1.0, max=1.0),
+    "NDRE":   dict(min=-1.0, max=0.5),
+    "CCCI":   dict(min=-1.0, max=2.0),
+    "MSAVI2": dict(min=-1.0, max=1.0),
     "NDWI":   dict(min=-1.0, max=1.0),
     "NDMI":   dict(min=-1.0, max=1.0),
     "NBR":    dict(min=-1.0, max=1.0),
@@ -176,7 +176,7 @@ def load_area(area_opt):
     if area_opt.startswith("Usar"):
         gdf_area, _ = load_area_from_tmp()
         if gdf_area is None:
-            st.warning("Não encontrei a área amostral salva. Volte ao passo 1 e clique em **Salvar dados**.")
+            st.warning("Não encontrei a área amostral salva. Volte a 'Adicionar informações' e clique em **Salvar dados**.")
         return gdf_area
     else:
         up = st.file_uploader("Carregue um polígono (GPKG)", type=["gpkg"], key="poly_uploader")
