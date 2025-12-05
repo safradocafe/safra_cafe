@@ -416,7 +416,7 @@ def exportar_dados():
         mime="application/zip",
         key="download_zip"
     )
-  
+    
     # Adiciona o novo ponto ao GeoDataFrame
     if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
         st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
