@@ -426,7 +426,7 @@ def inserir_produtividade():
         st.session_state.gdf_pontos = gdf
         st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos!")
         time.sleep(1)
-        st.rerun()
+        st.stop()
 
 # Layout
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
