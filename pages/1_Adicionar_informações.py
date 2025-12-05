@@ -374,6 +374,61 @@ def _add_point(lat, lon, metodo, valor=None):
     st.session_state.gdf_pontos = st.session_state.gdf_pontos
     return True
 
+def exportar_dados():
+    """Exporta área e pontos para arquivos GPKG"""
+    
+    if st.session_state.gdf_poligono is None:
+        st.warning("⚠️ Nenhuma área amostral definida para exportar!")
+        return
+    
+    # Cria um arquivo ZIP com tudo
+    zip_buffer = BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Exporta área amostral
+        if st.session_state.gdf_poligono is not None:
+            area_bytes = BytesIO()
+            st.session_state.gdf_poligono.to_file(area_bytes, driver='GPKG', layer='area_amostral')
+            zip_file.writestr('area_amostral.gpkg', area_bytes.getvalue())
+        
+        # Exporta pontos
+        if st.session_state.gdf_pontos is not None and not st.session_state.gdf_pontos.empty:
+            pontos_bytes = BytesIO()
+            st.session_state.gdf_pontos.to_file(pontos_bytes, driver='GPKG', layer='pontos_produtividade')
+            zip_file.writestr('pontos_produtividade.gpkg', pontos_bytes.getvalue())
+        
+        # Exporta parâmetros como JSON
+        parametros = {
+            "unidade": st.session_state.unidade_selecionada,
+            "densidade_plantas_ha": st.session_state.densidade_plantas if st.session_state.densidade_plantas else 0,
+            "produtividade_media_sacas_ha": st.session_state.produtividade_media if st.session_state.produtividade_media else 0,
+            "total_pontos": len(st.session_state.gdf_pontos) if st.session_state.gdf_pontos is not None else 0
+        }
+        zip_file.writestr('parametros.json', json.dumps(parametros, indent=2, ensure_ascii=False))
+    
+    zip_buffer.seek(0)
+    
+    # Botão para download
+    st.download_button(
+        label="📥 Baixar ZIP com todos os dados",
+        data=zip_buffer,
+        file_name=f"dados_produtividade_{time.strftime('%Y%m%d_%H%M%S')}.zip",
+        mime="application/zip",
+        key="download_zip"
+    )
+  
+    # Adiciona o novo ponto ao GeoDataFrame
+    if st.session_state.gdf_pontos is None or st.session_state.gdf_pontos.empty:
+        st.session_state.gdf_pontos = gpd.GeoDataFrame([novo_ponto], geometry='geometry', crs="EPSG:4326")
+    else:
+        novo_df = pd.DataFrame([novo_ponto])
+        st.session_state.gdf_pontos = pd.concat([st.session_state.gdf_pontos, novo_df], ignore_index=True)
+        st.session_state.gdf_pontos = gpd.GeoDataFrame(st.session_state.gdf_pontos, geometry='geometry', crs="EPSG:4326")
+    
+    # Força persistência na sessão
+    st.session_state.gdf_pontos = st.session_state.gdf_pontos
+    return True
+
 
 def inserir_produtividade():
     if (st.session_state.gdf_pontos is None or 
@@ -426,7 +481,7 @@ def inserir_produtividade():
         st.session_state.gdf_pontos = gdf
         st.success(f"✅ Produtividades salvas para {pontos_atualizados} pontos!")
         time.sleep(1)
-        st.stop()
+        st.rerun()
 
 # Layout
 st.subheader("Adicionar informações: área amostral e pontos de produtividade")
@@ -591,7 +646,7 @@ with c2:
         inserir_produtividade()
 with c3:
     if st.button("💾 Exportar dados"):
-        exportar_dados()
+        exportar_dados()   
 with c4:
     if st.button("☁️ Salvar dados na nuvem"):
         salvar_no_streamlit_cloud()
@@ -599,3 +654,4 @@ with c4:
 st.markdown("")  
 if st.button("💾 Salvar pontos marcados"):
     salvar_pontos_marcados_temp()
+
