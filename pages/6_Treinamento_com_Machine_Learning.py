@@ -1,4 +1,4 @@
-import os, glob, io, csv, random, joblib, tempfile
+import os, glob, io, csv, random, joblib
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -12,21 +12,16 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.linear_model import Ridge, Lasso, ElasticNet
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error
-from scipy.stats import uniform
 
 st.set_page_config(layout="wide")
 st.markdown("## 🧠 Treinamento e avaliação de modelos (20 execuções por algoritmo)")
 st.caption("Carrega o CSV mais recente salvo na nuvem, treina 11 modelos 20x cada, guarda o melhor de cada e destaca o melhor global.")
 
-# USAR DIRETÓRIO TEMPORÁRIO PERSISTENTE
 BASE_TMP = "/tmp/streamlit_dados"
 NUM_EXECUCOES = 20
 GLOBAL_SEED = 42
-
-# Garantir que o diretório existe desde o início
-os.makedirs(BASE_TMP, exist_ok=True)
 
 os.environ["PYTHONHASHSEED"] = str(GLOBAL_SEED)
 random.seed(GLOBAL_SEED)
@@ -34,31 +29,12 @@ np.random.seed(GLOBAL_SEED)
 
 TOKENS_IDX = ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]
 
-def _find_latest_save_dir(base=BASE_TMP):
-    """Encontra o diretório de salvamento mais recente."""
+def _find_latest_indices_csv(base=BASE_TMP):
     if not os.path.isdir(base):
         return None
-    cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
-    if not cands:
+    pats = glob.glob(os.path.join(base, "salvamento-*", "indices_espectrais_pontos_*.csv"))
+    if not pats:
         return None
-    cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return cands[0]
-
-def _find_latest_indices_csv(base=BASE_TMP):
-    """Encontra o CSV de índices mais recente dentro do diretório de salvamento."""
-    latest_dir = _find_latest_save_dir(base)
-    if not latest_dir:
-        return None    
-    
-    # Primeiro tenta encontrar CSV com timestamp
-    pats = glob.glob(os.path.join(latest_dir, "indices_espectrais_pontos_*.csv"))
-    if not pats:        
-        # Tenta também CSV sem timestamp
-        simple_csv = os.path.join(latest_dir, "indices_espectrais_pontos.csv")
-        if os.path.exists(simple_csv):
-            return simple_csv
-        return None
-    
     pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return pats[0]
 
@@ -77,7 +53,7 @@ def _sniff_delim_and_decimal(sample_bytes: bytes):
                 break
     return delim, decimal
 
-@st.cache_data(show_spinner=False, persist="disk")
+@st.cache_data(show_spinner=False)
 def _read_csv_robusto(path: str) -> pd.DataFrame:
     with open(path, "rb") as f:
         raw = f.read()
@@ -120,18 +96,40 @@ def _filter_training_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(axis=1, how="all")
     return df
 
-mlp_search_config = {
-    "model": MLPRegressor(max_iter=2000, early_stopping=True, random_state=GLOBAL_SEED),
-    "params": {
-        "hidden_layer_sizes": [(50,), (100,), (50, 50), (100, 50)],
-        "activation": ["identity", "relu", "tanh"],
-        "alpha": uniform(0.0001, 0.01)
-    }
-}
+latest_csv_path = _find_latest_indices_csv()
+if not latest_csv_path or not os.path.exists(latest_csv_path):
+    st.error("❌ CSV de índices não encontrado automaticamente. Gere-o na aba **Previsão da safra**.")
+    st.stop()
 
-# Usar session_state para persistir o melhor modelo
-if "BEST_MLP_MODEL" not in st.session_state:
-    st.session_state.BEST_MLP_MODEL = None
+df_raw = _read_csv_robusto(latest_csv_path)
+df = _filter_training_columns(df_raw)
+
+if df.empty or "maduro_kg" not in df.columns:
+    st.error("❌ Não foi possível encontrar 'maduro_kg' e colunas de índices no CSV carregado.")
+    st.stop()
+
+st.success(f"✅ CSV carregado")
+with st.expander("Pré-visualização (dados tratados para ML)"):
+    st.dataframe(df.head(), use_container_width=True)
+
+X = df.drop(columns=["maduro_kg"])
+y = df["maduro_kg"].copy()
+
+modelos = {
+    "MLP": MLPRegressor(hidden_layer_sizes=(50, 50), activation='identity', solver='adam',
+                        max_iter=2000, early_stopping=True, random_state=GLOBAL_SEED),
+    "SVR": SVR(kernel='rbf', C=1.0, epsilon=0.1),
+    "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=GLOBAL_SEED),
+    "RandomForest": RandomForestRegressor(n_estimators=100, random_state=GLOBAL_SEED),
+    "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=GLOBAL_SEED),
+    "AdaBoost": AdaBoostRegressor(n_estimators=100, random_state=GLOBAL_SEED),
+    "DecisionTree": DecisionTreeRegressor(random_state=GLOBAL_SEED),
+    "KNN": KNeighborsRegressor(n_neighbors=5),
+    "Ridge": Ridge(alpha=1.0, random_state=GLOBAL_SEED),
+    "Lasso": Lasso(alpha=0.1, random_state=GLOBAL_SEED),
+    "ElasticNet": ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=GLOBAL_SEED),
+}
+modelos_escalonados = {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}
 
 def _run_training_once(X: pd.DataFrame, y: pd.Series):
     resultados = {nome: [] for nome in modelos.keys()}
@@ -151,43 +149,15 @@ def _run_training_once(X: pd.DataFrame, y: pd.Series):
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled  = scaler.transform(X_test)
 
-        for nome, modelo in modelos.items():            
-            if nome == "MLP" and i == 0 and st.session_state.BEST_MLP_MODEL is None:
-                status.text("🔍 Executando busca de hiperparâmetros para MLP...")
-                                
-                random_search = RandomizedSearchCV(
-                    estimator=mlp_search_config["model"],
-                    param_distributions=mlp_search_config["params"],
-                    n_iter=20,  
-                    cv=3,  
-                    scoring='r2',
-                    random_state=GLOBAL_SEED,
-                    n_jobs=-1,
-                    verbose=0
-                )                
-                
-                X_tr = X_train_scaled  
-                random_search.fit(X_tr, y_train)                
-                
-                st.session_state.BEST_MLP_MODEL = random_search.best_estimator_                
-                
-                st.info(f"✅ Melhores parâmetros para MLP encontrados: {random_search.best_params_}")            
-            
+        for nome, modelo in modelos.items():
             if nome in modelos_escalonados:
                 X_tr, X_te = X_train_scaled, X_test_scaled
             else:
                 X_tr, X_te = X_train, X_test
-            
-            try:                
-                if nome == "MLP" and st.session_state.BEST_MLP_MODEL is not None:                    
-                    from sklearn.base import clone
-                    modelo_a_usar = clone(st.session_state.BEST_MLP_MODEL)
-                    modelo_a_usar.random_state = i  
-                else:
-                    modelo_a_usar = modelo
-                
-                modelo_a_usar.fit(X_tr, y_train)
-                y_pred = modelo_a_usar.predict(X_te)
+
+            try:
+                modelo.fit(X_tr, y_train)
+                y_pred = modelo.predict(X_te)
                 r2  = r2_score(y_test, y_pred)
                 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
                 resultados[nome].append({
@@ -196,7 +166,7 @@ def _run_training_once(X: pd.DataFrame, y: pd.Series):
                     "rmse": rmse,
                     "convergiu": True
                 })
-            except Exception as e:
+            except Exception:
                 resultados[nome].append({
                     "execucao": i + 1,
                     "r2": np.nan,
@@ -209,112 +179,10 @@ def _run_training_once(X: pd.DataFrame, y: pd.Series):
     status.success("✅ Treinamento concluído!")
     return resultados
 
-# VERIFICAÇÃO INICIAL - garantir que encontramos o CSV antes de qualquer coisa
-if "csv_path_found" not in st.session_state:
-    latest_csv_path = _find_latest_indices_csv()
-    
-    if not latest_csv_path:
-        st.error("❌ CSV de índices não encontrado automaticamente.")
-        
-        # Verificar se o primeiro processo foi executado
-        st.info("ℹ️ **Possíveis causas:**")
-        st.write("1. O processamento de dados (aba anterior) não foi executado")
-        st.write("2. Os arquivos foram apagados do diretório temporário")
-        st.write("3. Problema de permissões no diretório")
-        
-        # Tentar criar o diretório se não existir
-        if not os.path.exists(BASE_TMP):
-            try:
-                os.makedirs(BASE_TMP, exist_ok=True)
-                st.write(f"✅ Criado diretório: {BASE_TMP}")
-            except Exception as e:
-                st.write(f"❌ Erro ao criar diretório: {e}")
-        
-        # Listar o que existe no /tmp
-        if os.path.exists("/tmp"):
-            st.write("📁 Conteúdo de /tmp:")
-            try:
-                items = os.listdir("/tmp")[:10]  # Primeiros 10 itens
-                for item in items:
-                    st.write(f"  - {item}")
-            except Exception as e:
-                st.write(f"  Erro ao listar: {e}")
-        
-        st.stop()
-    else:
-        st.session_state.csv_path_found = latest_csv_path
-        st.success(f"✅ CSV encontrado: {latest_csv_path}")
-
-# Agora usamos o caminho do session_state
-latest_csv_path = st.session_state.csv_path_found
-
-# Ler e processar o CSV
-if "df_processed" not in st.session_state:
-    df_raw = _read_csv_robusto(latest_csv_path)
-    df = _filter_training_columns(df_raw)
-    
-    if df.empty:
-        st.error("❌ Dataframe vazio após filtragem.")
-        st.stop()
-    
-    if "maduro_kg" not in df.columns:
-        st.error("❌ Coluna 'maduro_kg' não encontrada no CSV.")
-        st.write("Colunas disponíveis:", list(df.columns))
-        st.stop()
-    
-    st.session_state.df_processed = df
-else:
-    df = st.session_state.df_processed
-
-with st.expander("Pré-visualização (dados tratados para ML)"):
-    st.dataframe(df.head(), use_container_width=True)
-    st.write(f"Shape: {df.shape}")
-
-X = df.drop(columns=["maduro_kg"])
-y = df["maduro_kg"].copy()
-
-modelos = {
-    "MLP": MLPRegressor(hidden_layer_sizes=(50, 50), activation='relu', solver='adam',
-                        max_iter=2000, early_stopping=True, random_state=GLOBAL_SEED),
-    "SVR": SVR(kernel='rbf', C=1.0, epsilon=0.1),
-    "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=GLOBAL_SEED),
-    "RandomForest": RandomForestRegressor(n_estimators=100, random_state=GLOBAL_SEED),
-    "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=GLOBAL_SEED),
-    "AdaBoost": AdaBoostRegressor(n_estimators=100, random_state=GLOBAL_SEED),
-    "DecisionTree": DecisionTreeRegressor(random_state=GLOBAL_SEED),
-    "KNN": KNeighborsRegressor(n_neighbors=5),
-    "Ridge": Ridge(alpha=1.0, random_state=GLOBAL_SEED),
-    "Lasso": Lasso(alpha=0.1, random_state=GLOBAL_SEED),
-    "ElasticNet": ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=GLOBAL_SEED),
-}
-modelos_escalonados = {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}
-
-# Botão para iniciar/reenexecutar treinamento
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("▶️ Iniciar treinamento (20x cada modelo)"):
-        if "ml_results" in st.session_state:
-            del st.session_state.ml_results
-        if "BEST_MLP_MODEL" in st.session_state:
-            del st.session_state.BEST_MLP_MODEL
-        st.rerun()
-
-with col2:
-    if st.button("🔄 Limpar cache e recomeçar"):
-        # Limpar tudo
-        keys_to_delete = ["ml_results", "BEST_MLP_MODEL", "df_processed", "csv_path_found"]
-        for key in keys_to_delete:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
-
-# Executar treinamento apenas se solicitado ou se ainda não foi feito
 if "ml_results" not in st.session_state:
-    st.info("👆 Clique em 'Iniciar treinamento' para começar o processo.")
-    st.stop()
+    st.session_state["ml_results"] = _run_training_once(X, y)
 
-# Se chegou aqui, temos resultados para mostrar
-resultados = st.session_state.ml_results
+resultados = st.session_state["ml_results"]
 
 melhores_modelos = {}
 linhas_best = []
@@ -344,14 +212,8 @@ st.success(f"🏆 **Melhor modelo global:** `{melhor_modelo_nome}` (execução {
 rs = melhor_exec - 1
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=rs)
 
-def _make_model(name: str):    
-    if name == "MLP" and st.session_state.BEST_MLP_MODEL is not None:
-        from sklearn.base import clone
-        modelo = clone(st.session_state.BEST_MLP_MODEL)
-        modelo.random_state = GLOBAL_SEED  
-        return modelo    
-    
-    modelos_padrao = {
+def _make_model(name: str):
+    return {
         "MLP": MLPRegressor(hidden_layer_sizes=(50, 50), activation='relu', solver='adam',
                             max_iter=2000, early_stopping=True, random_state=GLOBAL_SEED),
         "SVR": SVR(kernel='rbf', C=1.0, epsilon=0.1),
@@ -364,17 +226,9 @@ def _make_model(name: str):
         "Ridge": Ridge(alpha=1.0, random_state=GLOBAL_SEED),
         "Lasso": Lasso(alpha=0.1, random_state=GLOBAL_SEED),
         "ElasticNet": ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=GLOBAL_SEED),
-    }
-    return modelos_padrao[name]
+    }[name]
 
 best_model = _make_model(melhor_modelo_nome)
-
-if melhor_modelo_nome == "MLP" and st.session_state.BEST_MLP_MODEL is not None:
-    st.info(f"📊 **Parâmetros otimizados do MLP:**")
-    params = st.session_state.BEST_MLP_MODEL.get_params()    
-    important_params = {k: v for k, v in params.items() 
-                       if k in ['hidden_layer_sizes', 'activation', 'alpha', 'solver']}
-    st.json(important_params)
 
 if melhor_modelo_nome in {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}:
     scaler = StandardScaler()
@@ -427,16 +281,12 @@ try:
 except Exception:
     pass
 
-# Salvar o modelo
-latest_dir = os.path.dirname(latest_csv_path)
-out_path = os.path.join(latest_dir, f"melhor_modelo_{melhor_modelo_nome}.pkl")
-
 bundle = {"model": best_model, "features": list(X.columns)}
 if melhor_modelo_nome in {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}:
     bundle["scaler"] = scaler
 
-if melhor_modelo_nome == "MLP" and st.session_state.BEST_MLP_MODEL is not None:
-    bundle["optimized_params"] = st.session_state.BEST_MLP_MODEL.get_params()
-
+out_path = os.path.join(BASE_TMP, f"melhor_modelo_{melhor_modelo_nome}.pkl")
+os.makedirs(BASE_TMP, exist_ok=True)
 joblib.dump(bundle, out_path)
-st.success(f"💾 Modelo salvo em: {out_path}")
+
+
