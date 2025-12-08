@@ -30,12 +30,29 @@ np.random.seed(GLOBAL_SEED)
 
 TOKENS_IDX = ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]
 
-def _find_latest_indices_csv(base=BASE_TMP):
+def _find_latest_save_dir(base=BASE_TMP):
+    """Encontra o diretório de salvamento mais recente."""
     if not os.path.isdir(base):
         return None
-    pats = glob.glob(os.path.join(base, "salvamento-*", "indices_espectrais_pontos_*.csv"))
-    if not pats:
+    cands = [d for d in glob.glob(os.path.join(base, "salvamento-*")) if os.path.isdir(d)]
+    if not cands:
         return None
+    cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return cands[0]
+
+def _find_latest_indices_csv(base=BASE_TMP):
+    """Encontra o CSV de índices mais recente dentro do diretório de salvamento."""
+    latest_dir = _find_latest_save_dir(base)
+    if not latest_dir:
+        return None    
+    
+    pats = glob.glob(os.path.join(latest_dir, "indices_espectrais_pontos_*.csv"))
+    if not pats:        
+        simple_csv = os.path.join(latest_dir, "indices_espectrais_pontos.csv")
+        if os.path.exists(simple_csv):
+            return simple_csv
+        return None
+    
     pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return pats[0]
 
@@ -187,20 +204,50 @@ def _run_training_once(X: pd.DataFrame, y: pd.Series):
     return resultados
 
 latest_csv_path = _find_latest_indices_csv()
-if not latest_csv_path or not os.path.exists(latest_csv_path):
-    st.error("❌ CSV de índices não encontrado automaticamente. Gere-o na aba **Previsão da safra**.")
+
+if not latest_csv_path:
+    st.error("❌ CSV de índices não encontrado automaticamente.")    
+    
+    st.info("🕵️‍♂️ **Debug information:**")    
+    
+    if os.path.isdir(BASE_TMP):
+        st.write(f"✅ Diretório base existe: {BASE_TMP}")        
+        
+        salva_dirs = glob.glob(os.path.join(BASE_TMP, "salvamento-*"))
+        if salva_dirs:
+            st.write(f"✅ Encontrados {len(salva_dirs)} diretórios de salvamento:")
+            for d in salva_dirs:
+                st.write(f"  - {d}")
+                # Listar arquivos dentro de cada diretório
+                arquivos = os.listdir(d)
+                if arquivos:
+                    st.write(f"    Arquivos: {', '.join(arquivos[:5])}...")
+                else:
+                    st.write(f"    (vazio)")
+        else:
+            st.write(f"❌ Nenhum diretório 'salvamento-*' encontrado em {BASE_TMP}")
+    else:
+        st.write(f"❌ Diretório base NÃO existe: {BASE_TMP}")
+    
     st.stop()
+
+st.success(f"✅ CSV carregado de: {latest_csv_path}")
 
 df_raw = _read_csv_robusto(latest_csv_path)
 df = _filter_training_columns(df_raw)
 
-if df.empty or "maduro_kg" not in df.columns:
-    st.error("❌ Não foi possível encontrar 'maduro_kg' e colunas de índices no CSV carregado.")
+if df.empty:
+    st.error("❌ Dataframe vazio após filtragem.")
     st.stop()
 
-st.success(f"✅ CSV carregado")
+if "maduro_kg" not in df.columns:
+    st.error("❌ Coluna 'maduro_kg' não encontrada no CSV.")
+    st.write("Colunas disponíveis:", list(df.columns))
+    st.stop()
+
 with st.expander("Pré-visualização (dados tratados para ML)"):
     st.dataframe(df.head(), use_container_width=True)
+    st.write(f"Shape: {df.shape}")
 
 X = df.drop(columns=["maduro_kg"])
 y = df["maduro_kg"].copy()
@@ -221,8 +268,14 @@ modelos = {
 }
 modelos_escalonados = {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}
 
+if st.button("🔄 Reexecutar treinamento (20x cada modelo)"):
+    if "ml_results" in st.session_state:
+        del st.session_state["ml_results"]
+    st.rerun()
+
 if "ml_results" not in st.session_state:
-    st.session_state["ml_results"] = _run_training_once(X, y)
+    with st.spinner("Treinando modelos (pode levar alguns minutos)..."):
+        st.session_state["ml_results"] = _run_training_once(X, y)
 
 resultados = st.session_state["ml_results"]
 
@@ -337,6 +390,9 @@ try:
 except Exception:
     pass
 
+latest_dir = os.path.dirname(latest_csv_path)
+out_path = os.path.join(latest_dir, f"melhor_modelo_{melhor_modelo_nome}.pkl")
+
 bundle = {"model": best_model, "features": list(X.columns)}
 if melhor_modelo_nome in {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}:
     bundle["scaler"] = scaler
@@ -344,6 +400,5 @@ if melhor_modelo_nome in {"MLP", "SVR", "KNN", "Ridge", "Lasso", "ElasticNet"}:
 if melhor_modelo_nome == "MLP" and BEST_MLP_MODEL is not None:
     bundle["optimized_params"] = BEST_MLP_MODEL.get_params()
 
-out_path = os.path.join(BASE_TMP, f"melhor_modelo_{melhor_modelo_nome}.pkl")
-os.makedirs(BASE_TMP, exist_ok=True)
 joblib.dump(bundle, out_path)
+st.success(f"💾 Modelo salvo em: {out_path}")
