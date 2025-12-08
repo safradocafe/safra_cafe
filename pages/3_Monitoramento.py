@@ -2,7 +2,6 @@ import os
 import json
 import glob
 from datetime import date
-
 import ee
 import geemap
 import geopandas as gpd
@@ -16,9 +15,6 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import to_hex
 
-# -------------------------
-# Estilo e cabeçalho
-# -------------------------
 st.set_page_config(layout="wide")
 st.markdown("""
 <style>
@@ -47,9 +43,6 @@ st.markdown("""
 <div class="hint">Escolha o período, os índices e a área (amostral salva no passo 1 ou um polígono da fazenda) para visualizar o mapa e a série temporal (média no polígono).</div>
 """, unsafe_allow_html=True)
 
-# -------------------------
-# Utilitários
-# -------------------------
 def _find_latest_save_dir(base="/tmp/streamlit_dados"):
     if not os.path.isdir(base):
         return None
@@ -111,8 +104,8 @@ PALETTES = {
 INDEX_RANGES = {
     "NDVI":   dict(min=-1.0, max=1.0),
     "GNDVI":  dict(min=-1.0, max=1.0),
-    "NDRE":   dict(min=-1.0, max=0.5),
-    "CCCI":   dict(min=-1.0, max=2.0),
+    "NDRE":   dict(min=-1.0, max=1.0),
+    "CCCI":   dict(min=-1.0, max=1.0),
     "MSAVI2": dict(min=-1.0, max=1.0),
     "NDWI":   dict(min=-1.0, max=1.0),
     "NDMI":   dict(min=-1.0, max=1.0),
@@ -136,9 +129,6 @@ def sidebar_palette_legend(palette, vmin=-1.0, vmax=1.0, title="Legenda (índice
     """
     st.sidebar.markdown(html, unsafe_allow_html=True)
 
-# -------------------------
-# Sidebar – controles
-# -------------------------
 with st.sidebar:
     st.subheader("Configurações")
 
@@ -159,19 +149,14 @@ with st.sidebar:
         default=["NDVI", "GNDVI", "NDRE", "MSAVI2", "NDWI"],
         key="indices_sel_ms"
     )
-
-    # Mantém um único seletor de paleta na sidebar (vale para mapa e legenda)
+  
     palette_name = st.selectbox("Paleta (mapa e legenda)", list(PALETTES.keys()), index=0, key="palette_sel")
     cloud_thr    = st.slider("Nuvem máxima (%)", 0, 60, 10, 1, key="cloud_thr")
     btn          = st.button("▶️ Processar", key="process_btn")
-
-    # Legenda dinâmica da sidebar
+   
     sidebar_palette_legend(PALETTES[st.session_state["palette_sel"]], vmin=-1.0, vmax=1.0,
                            title="Legenda (índices -1 a 1)")
 
-# -------------------------
-# Carregar área
-# -------------------------
 def load_area(area_opt):
     if area_opt.startswith("Usar"):
         gdf_area, _ = load_area_from_tmp()
@@ -200,9 +185,6 @@ except Exception as e:
     st.error(f"Falha ao converter polígono para EE: {e}")
     st.stop()
 
-# -------------------------
-# Funções EE
-# -------------------------
 ALL_INDICES = list(INDEX_RANGES.keys())
 
 def add_indices(img, wanted):
@@ -322,13 +304,9 @@ def add_linear_legend(fmap, title, palette, vmin, vmax, date_str=None, position=
     macro._template = tmpl
     fmap.get_root().add_child(macro)
 
-# -------------------------
-# Estado (datas + série)
-# -------------------------
 if "mon_dates" not in st.session_state:    st.session_state["mon_dates"] = []
 if "mon_ts" not in st.session_state:       st.session_state["mon_ts"] = pd.DataFrame()
 
-# Processar
 if st.session_state["process_btn"]:
     with st.spinner("Processando imagens, listando datas e calculando séries..."):
         try:
@@ -347,14 +325,10 @@ if st.session_state["process_btn"]:
         except Exception as e:
             st.error(f"Falha no processamento: {e}")
 
-# -------------------------
-# Controles pós-processamento (visual)
-# -------------------------
 dates = st.session_state.get("mon_dates", [])
 ts_df = st.session_state.get("mon_ts", pd.DataFrame())
 
-if dates:
-    # ✅ Somente os dois controles pedidos, lado a lado e compactos
+if dates:    
     colA, colB = st.columns([3, 2])
     with colA:
         idx_for_map = st.radio(
@@ -366,11 +340,9 @@ if dates:
         )
     with colB:
         date_choice = st.select_slider("Data (cena única)", options=dates, value=dates[0], key="date_choice")
-
-    # Imagem do dia (com TODAS as bandas de índices)
+   
     img_date = get_best_image_for_date(ee_poly.geometry(), date_choice, st.session_state["cloud_thr"])
-
-    # Mapa
+   
     center = [gdf_area.geometry.unary_union.centroid.y, gdf_area.geometry.unary_union.centroid.x]
     m = folium.Map(location=center, zoom_start=16, tiles="OpenStreetMap")
     folium.TileLayer(
@@ -383,11 +355,9 @@ if dates:
         name="Área",
         style_function=lambda x: {"color":"#1976d2","weight":2,"fillColor":"#1976d2","fillOpacity":0.08}
     ).add_to(m)
-
-    # paleta única (sidebar) vale para mapa e legenda
+   
     pal = PALETTES[st.session_state["palette_sel"]]
-
-    # camada escolhida
+  
     if idx_for_map == "RGB (B4/B3/B2)":
         rgb_url = ee_tile_url(img_date, {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
         folium.raster_layers.TileLayer(
@@ -405,12 +375,10 @@ if dates:
         add_linear_legend(m, idx_for_map, pal, vis_range["min"], vis_range["max"], date_str=date_choice)
 
     folium.LayerControl(collapsed=False).add_to(m)
-
-    # chave única sem seletor de paleta na área principal
+    
     map_key = f"map_{idx_for_map}_{date_choice}_{st.session_state['palette_sel']}"
     st_folium(m, width=1000, height=620, key=map_key)
-
-    # Série temporal
+    
     if isinstance(ts_df, pd.DataFrame) and not ts_df.empty:
         st.subheader("📈 Série temporal (média do índice no polígono)")
         fig, ax = plt.subplots(figsize=(10, 3.5))
