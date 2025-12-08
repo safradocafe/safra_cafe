@@ -1,6 +1,5 @@
 import os, glob, json
 from datetime import datetime, date
-
 import ee
 import geemap
 import geopandas as gpd
@@ -43,8 +42,7 @@ def load_cloud_inputs():
         gdf_poly = gdf_poly.set_crs(4326) if gdf_poly.crs is None else gdf_poly.to_crs(4326)
     if gdf_pts.crs is None or gdf_pts.crs.to_epsg() != 4326:
         gdf_pts = gdf_pts.set_crs(4326) if gdf_pts.crs is None else gdf_pts.to_crs(4326)
-
-    # Garante coluna 'Code'
+   
     if "Code" not in gdf_pts.columns:
         gdf_pts = gdf_pts.copy()
         gdf_pts["Code"] = np.arange(1, len(gdf_pts) + 1).astype(int)
@@ -169,7 +167,6 @@ def process_all():
     if not dates:
         st.warning("Nenhuma data encontrada no período/limite de nuvens.")
         st.stop()
-
    
     def _buf(f):
         return ee.Feature(f.geometry().buffer(buffer_m)).copyProperties(f)
@@ -178,7 +175,6 @@ def process_all():
     reducer = (ee.Reducer.min()
                .combine(ee.Reducer.mean(), sharedInputs=True)
                .combine(ee.Reducer.max(),  sharedInputs=True))
-
     
     base_out = gdf_pts[["Code"]].copy()
     base_out.index = base_out["Code"].astype(str)
@@ -190,7 +186,6 @@ def process_all():
         prog.progress(i/len(dates), text=f"Processando {d} ({i}/{len(dates)})")
         img = best_image_on_date(ee_poly.geometry(), d, cloud_thr, indices_sel)
         img_idx = img.select(indices_sel) 
-
         
         feats_fc = img_idx.reduceRegions(
             collection=ee_pts_buf,
