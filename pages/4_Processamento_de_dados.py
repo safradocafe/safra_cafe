@@ -204,8 +204,7 @@ def process_all():
             for idx in indices_sel:
                 vmin  = p.get(f"{idx}_min",  None)
                 vmean = p.get(f"{idx}_mean", None)
-                vmax  = p.get(f"{idx}_max",  None)
-                # chaves: "YYYY-MM-DD_IDX_stat"
+                vmax  = p.get(f"{idx}_max",  None)                
                 props_dict[code][f"{d}_{idx}_min"]  = float(vmin)  if vmin  is not None else np.nan
                 props_dict[code][f"{d}_{idx}_mean"] = float(vmean) if vmean is not None else np.nan
                 props_dict[code][f"{d}_{idx}_max"]  = float(vmax)  if vmax  is not None else np.nan
