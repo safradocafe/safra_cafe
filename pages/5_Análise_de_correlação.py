@@ -1,25 +1,18 @@
 # pages/4_1. Análise_de_correlação.py
 import os, glob, io, csv
 from datetime import datetime
-
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 from scipy.stats import shapiro, pearsonr
 
-# =========================
-# Página / estilo
-# =========================
 st.set_page_config(page_title="Análise de correlação", layout="wide")
 st.markdown("## 📊 Análise de Correlação entre índices espectrais e produtividade")
 
 BASE_TMP = "/tmp/streamlit_dados"
 TOKENS_IDX = ["NDVI", "GNDVI", "NDRE", "CCCI", "MSAVI2", "NDWI", "NDMI", "NBR", "TWI2"]
 
-# =========================
-# Utilitários
-# =========================
 def _find_latest_indices_csv(base=BASE_TMP):
     """Encontra o CSV mais recente gerado pela aba de Processamento/Previsão."""
     if not os.path.isdir(base):
@@ -32,14 +25,13 @@ def _find_latest_indices_csv(base=BASE_TMP):
 
 def _sniff_delim_and_decimal(sample_bytes: bytes):
     """Infere delimitador e separador decimal (vírgula/ponto)."""
-    text = sample_bytes.decode("utf-8", errors="ignore")
-    # delimitador
+    text = sample_bytes.decode("utf-8", errors="ignore")    
     try:
         dialect = csv.Sniffer().sniff(text[:10000], delimiters=[",", ";", "\t", "|"])
         delim = dialect.delimiter
     except Exception:
         delim = ";" if text.count(";") > text.count(",") else ","
-    # decimal
+        
     decimal = "."
     for line in text.splitlines()[:50]:
         if any(ch.isdigit() for ch in line):
@@ -61,8 +53,7 @@ def _read_csv_robusto_cached(raw: bytes):
             pass
     if df is None:
         df = pd.read_csv(io.BytesIO(raw))
-
-    # caso tenha ficado tudo em 1 coluna, tenta o outro separador
+    
     if df.shape[1] == 1:
         other = ";" if delim == "," else ","
         for enc in ("utf-8", "latin-1"):
@@ -80,25 +71,20 @@ def _read_csv_robusto_cached(raw: bytes):
 def _prepare_for_corr_cached(raw: bytes):
     """Trata o CSV bruto e retorna df pronto para correlação (cacheado)."""
     df = _read_csv_robusto_cached(raw)
-
-    # remove colunas extras
+    
     drop_cols = [c for c in ["Code", "latitude", "longitude", "geometry"] if c in df.columns]
     df = df.drop(columns=drop_cols, errors="ignore")
-
-    # seleciona 'maduro_kg' + TODAS as colunas de índices
+    
     idx_cols = [c for c in df.columns if any(tok in c for tok in TOKENS_IDX)]
     keep = (["maduro_kg"] if "maduro_kg" in df.columns else []) + idx_cols
     df = df[keep].copy()
-
-    # coerção numérica
+    
     for c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    # remove linhas sem alvo
+   
     if "maduro_kg" in df.columns:
         df = df.dropna(subset=["maduro_kg"], how="any")
-
-    # remove colunas totalmente NaN
+    
     df = df.dropna(axis=1, how="all")
     return df
 
@@ -128,16 +114,14 @@ def _compute_corr_all_cached(df_bytes: bytes):
     Computa método, proporção de normalidade, matriz de correlação,
     série completa de correlações com maduro_kg, top5 e p-valores (se Pearson).
     Cacheia pelo conteúdo serializado do DF (bytes).
-    """
-    # reconstrói df tratado a partir dos mesmos bytes
+    """    
     df = _prepare_for_corr_cached(df_bytes)
     if df.empty or "maduro_kg" not in df.columns:
         return None
 
     metodo, prop_norm = _choose_method(df)
     corr = df.corr(method=metodo)
-
-    # correlações com o alvo
+    
     cols = [c for c in df.columns if c != "maduro_kg"]
     vals = {}
     for c in cols:
@@ -162,8 +146,7 @@ def _compute_corr_all_cached(df_bytes: bytes):
                     pvals[c] = p
                 except Exception:
                     pvals[c] = np.nan
-
-    # serialização leve para não duplicar DataFrame inteiro no cache
+    
     return {
         "method": metodo,
         "prop_norm": prop_norm,
@@ -173,21 +156,16 @@ def _compute_corr_all_cached(df_bytes: bytes):
         "pvals": pvals,
     }
 
-# =========================
-# 1) Carregamento do CSV (auto + upload) — com cache por BYTES
-# =========================
 st.markdown("#### 1) Carregamento de dados")
 
 latest_csv_path = _find_latest_indices_csv()
 raw_bytes = None
 
-# automático
 if latest_csv_path and os.path.exists(latest_csv_path):
     with open(latest_csv_path, "rb") as f:
         raw_bytes = f.read()
     st.success(f"✅ CSV carregado automaticamente")
 
-# upload manual (se existir, sobrescreve o automático)
 up = st.file_uploader("Ou selecione manualmente o CSV gerado na aba de Processamento", type=["csv"])
 if up is not None:
     raw_bytes = up.getvalue()
@@ -201,9 +179,6 @@ with st.expander("Pré-visualização do CSV (bruto)"):
     df_raw_preview = _read_csv_robusto_cached(raw_bytes)
     st.dataframe(df_raw_preview.head(), use_container_width=True)
 
-# =========================
-# 2) Tratamento: mantém 'maduro_kg' + TODOS os índices (cache)
-# =========================
 df = _prepare_for_corr_cached(raw_bytes)
 if df.empty or "maduro_kg" not in df.columns:
     st.error("❌ Não foi possível encontrar 'maduro_kg' e/ou colunas de índices espectrais no CSV.")
@@ -213,9 +188,6 @@ st.caption(f"Linhas após tratamento: **{len(df)}** | Colunas de análise: **{le
 with st.expander("Visualizar dados tratados (maduro_kg + TODOS os índices)"):
     st.dataframe(df.head(), use_container_width=True)
 
-# =========================
-# 3) Análise automática (cache)
-# =========================
 st.markdown("### 2) Análise estatística (automática)")
 res = _compute_corr_all_cached(raw_bytes)
 if res is None:
@@ -258,4 +230,3 @@ with st.expander("📚 Como interpretar os resultados"):
 - **p-valor** (quando Pearson): < 0.05 sugere significância estatística.  
 - Correlação **não** implica causalidade — use como etapa exploratória.
 """)
-
