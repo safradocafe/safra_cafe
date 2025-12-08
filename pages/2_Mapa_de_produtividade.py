@@ -23,9 +23,6 @@ header, footer {visibility:hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------
-# Helpers de dados
-# -------------------------------
 def _find_latest_save_dir(base="/tmp/streamlit_dados"):
     if not os.path.isdir(base):
         return None
@@ -35,13 +32,11 @@ def _find_latest_save_dir(base="/tmp/streamlit_dados"):
     candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return candidates[0]
 
-def _load_area_and_points():
-    # 1) tenta session_state
+def _load_area_and_points():   
     save_dir = st.session_state.get("tmp_save_dir")
     area_path = st.session_state.get("tmp_area_path")
     pontos_path = st.session_state.get("tmp_pontos_path")
-
-    # 2) fallback: busca último salvamento no /tmp
+    
     if not save_dir or not os.path.exists(save_dir):
         latest = _find_latest_save_dir()
         if latest:
@@ -64,8 +59,7 @@ def _load_area_and_points():
         gdf_pontos = gpd.read_file(pontos_path)
         if gdf_pontos.crs is None or gdf_pontos.crs.to_epsg() != 4326:
             gdf_pontos = gdf_pontos.set_crs(4326) if gdf_pontos.crs is None else gdf_pontos.to_crs(4326)
-
-        # valida colunas essenciais
+        
         required = ["Code", "maduro_kg", "latitude", "longitude", "geometry"]
         faltando = [c for c in required if c not in gdf_pontos.columns]
         if faltando:
@@ -79,9 +73,6 @@ def get_local_utm_epsg(lon, lat):
     zone = int((lon + 180) / 6) + 1
     return (32700 + zone) if lat < 0 else (32600 + zone)
 
-# -------------------------------
-# Métodos de interpolação
-# -------------------------------
 def idw_interpolation(xyz, xi, yi, power=2):
     tree = cKDTree(xyz[:, :2])
     distances, idx = tree.query(np.c_[xi.flatten(), yi.flatten()], k=5)
@@ -108,9 +99,6 @@ METHODS = {
     'linear': {'function': linear_interpolation, 'description': 'Interpolação linear'},
 }
 
-# -------------------------------
-# UI – Controles
-# -------------------------------
 st.markdown(
     "<h3 style='margin:0 0 .5rem 0; font-weight:700;'>🗺️ Mapa de variabilidade da produtividade</h3>",
     unsafe_allow_html=True
@@ -133,9 +121,6 @@ with st.sidebar:
     heat_blur   = st.slider("Desfoque HeatMap", 8, 35, 20, 1, disabled=not add_heat)
     heat_opacity= st.slider("Opacidade HeatMap", 0.2, 1.0, 0.6, 0.05, disabled=not add_heat)
 
-# -------------------------------
-# Carrega dados
-# -------------------------------
 gdf_area, gdf_pontos, base_dir = _load_area_and_points()
 
 if gdf_area is None:
@@ -146,16 +131,12 @@ if gdf_pontos is None or gdf_pontos.empty:
     st.warning("⚠️ Pontos de produtividade não encontrados. Sem dados para interpolar.")
     st.stop()
 
-# -------------------------------
-# Projeta para UTM (metros)
-# -------------------------------
 cent = gdf_area.geometry.unary_union.centroid
 epsg_utm = get_local_utm_epsg(cent.x, cent.y)
 
 area_utm = gdf_area.to_crs(epsg=epsg_utm)
 pontos_utm = gdf_pontos.to_crs(epsg=epsg_utm)
 
-# bounds e grid
 xmin, ymin, xmax, ymax = area_utm.total_bounds
 pad = grid_res_m * 2
 xmin, ymin, xmax, ymax = xmin - pad, ymin - pad, xmax + pad, ymax + pad
@@ -164,21 +145,14 @@ xi = np.arange(xmin, xmax, grid_res_m)
 yi = np.arange(ymin, ymax, grid_res_m)
 xi_grid, yi_grid = np.meshgrid(xi, yi)
 
-# dados xyz
 vals = pontos_utm["maduro_kg"].astype(float).values
 xyz = np.c_[pontos_utm.geometry.x, pontos_utm.geometry.y, vals]
 
-# -------------------------------
-# Interpola
-# -------------------------------
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     Z = METHODS[method_key]['function'](xyz, xi_grid, yi_grid)
 
-# -------------------------------
-# Mascara fora do polígono
-# -------------------------------
-poly = unary_union(area_utm.geometry)  # pode ser MultiPolygon
+poly = unary_union(area_utm.geometry)  
 mask = np.zeros_like(Z, dtype=bool)
 px = xi_grid + (grid_res_m / 2.0)
 py = yi_grid + (grid_res_m / 2.0)
@@ -188,9 +162,6 @@ for i in range(py.shape[0]):
 
 Z_masked = np.where(mask, Z, np.nan)
 
-# -------------------------------
-# Normalização para visual
-# -------------------------------
 vmin = np.nanpercentile(Z_masked, 2)
 vmax = np.nanpercentile(Z_masked, 98)
 if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
@@ -200,20 +171,15 @@ norm = Normalize(vmin=vmin, vmax=vmax, clip=True)
 cmap = cm.get_cmap(cmap_name)
 
 rgba = cmap(norm(Z_masked))
-rgba[..., 3] = np.where(np.isnan(Z_masked), 0.0, 0.75)  # transparência fora do polígono
+rgba[..., 3] = np.where(np.isnan(Z_masked), 0.0, 0.75)  
 
-# salva PNG do overlay
 tmp_png_path = "/tmp/interp_overlay.png"
 plt.imsave(tmp_png_path, rgba, format="png", origin="lower")
 
-# bounds para overlay (em lat/lon)
 bb_ll = gpd.GeoSeries([Point(xmin, ymin)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
 bb_ur = gpd.GeoSeries([Point(xmax, ymax)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
 bounds = [[bb_ll.y, bb_ll.x], [bb_ur.y, bb_ur.x]]
 
-# -------------------------------
-# Mapa Folium
-# -------------------------------
 start_loc = [cent.y, cent.x]
 m = folium.Map(location=start_loc, zoom_start=17, tiles="OpenStreetMap")
 folium.TileLayer(
@@ -221,7 +187,6 @@ folium.TileLayer(
     attr='Esri', name='Satélite', overlay=False, control=True
 ).add_to(m)
 
-# polígono
 if show_area:
     folium.GeoJson(
         gdf_area[['geometry']].__geo_interface__,
@@ -229,7 +194,6 @@ if show_area:
         style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.1, "weight": 2}
     ).add_to(m)
 
-# overlay da interpolação
 overlay = folium.raster_layers.ImageOverlay(
     image=tmp_png_path,
     bounds=bounds,
@@ -240,7 +204,6 @@ overlay = folium.raster_layers.ImageOverlay(
 )
 overlay.add_to(m)
 
-# heatmap (opcional, leve)
 if add_heat:
     vals_h = gdf_pontos["maduro_kg"].astype(float).values
     mn, mx = np.nanmin(vals_h), np.nanmax(vals_h)
@@ -257,7 +220,6 @@ if add_heat:
             name="HeatMap (peso = maduro_kg)"
         ).add_to(m)
 
-# pontos
 if show_points:
     for _, row in gdf_pontos.iterrows():
         lat, lon = row["latitude"], row["longitude"]
@@ -278,9 +240,6 @@ if show_points:
 
 folium.LayerControl(collapsed=False).add_to(m)
 
-# -------------------------------
-# Legenda (colorbar) no sidebar
-# -------------------------------
 with st.sidebar:
     st.subheader("Legenda")
     fig, ax = plt.subplots(figsize=(3.8, 0.35))
@@ -293,5 +252,4 @@ with st.sidebar:
     cb1.ax.tick_params(labelsize=8)
     st.pyplot(fig, use_container_width=True)
 
-# Render
 st_folium(m, width=1000, height=640, key="mapa_produtividade_interp")
