@@ -1,6 +1,5 @@
 import os, glob, json, io, csv, unicodedata
 from datetime import datetime
-
 import ee
 import geemap
 import folium
@@ -19,7 +18,6 @@ except ImportError:
 import joblib
 import warnings
 warnings.filterwarnings("ignore")
-
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import Normalize
@@ -34,9 +32,6 @@ try:
 except Exception:
     HAVE_PYPROJ = False
 
-# -------------------------------
-# Configuração de página
-# -------------------------------
 st.set_page_config(layout="wide", page_title="Previsão de Safra")
 st.markdown("## ☕ Saiba a sua próxima safra")
 st.caption(
@@ -47,17 +42,11 @@ st.caption(
 BASE_TMP = "/tmp/streamlit_dados"
 TOKENS_IDX = ['CCCI','NDMI','NDVI','GNDVI','NDWI','NBR','TWI2','NDRE','MSAVI2']
 
-# -------------------------------
-# Session state inicial
-# -------------------------------
 if 'processing_complete' not in st.session_state:
     st.session_state.processing_complete = False
 if 'processed_data' not in st.session_state:
     st.session_state.processed_data = None
 
-# -------------------------------
-# Métodos de interpolação
-# -------------------------------
 def idw_interpolation(xyz, xi, yi, power=2):
     tree = cKDTree(xyz[:, :2])
     distances, idx = tree.query(np.c_[xi.flatten(), yi.flatten()], k=5)
@@ -89,9 +78,6 @@ def get_local_utm_epsg(lon, lat):
     zone = int((lon + 180) / 6) + 1
     return (32700 + zone) if lat < 0 else (32600 + zone)
 
-# -------------------------------
-# Utilidades de I/O no /tmp
-# -------------------------------
 def _find_latest_save_dir(base=BASE_TMP):
     if not os.path.isdir(base):
         return None
@@ -138,9 +124,6 @@ def _find_best_model(base=BASE_TMP):
     pats.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return pats[0]
 
-# -------------------------------
-# GEE init
-# -------------------------------
 def ensure_ee_init():
     try:
         _ = ee.Number(1).getInfo()
@@ -168,9 +151,6 @@ def ensure_ee_init():
 
 ensure_ee_init()
 
-# -------------------------------
-# CSV robusto
-# -------------------------------
 def _sniff_delim_and_decimal(sample_bytes: bytes):
     text = sample_bytes.decode("utf-8", errors="ignore")
     try:
@@ -211,9 +191,6 @@ def _read_csv_robusto(path: str) -> pd.DataFrame:
     df = df.dropna(axis=1, how="all")
     return df
 
-# -------------------------------
-# Carregamento de dados / parâmetros
-# -------------------------------
 save_dir = _find_latest_save_dir()
 if not save_dir:
     st.error("❌ Não encontrei diretório de salvamento em /tmp/streamlit_dados."); st.stop()
@@ -238,11 +215,10 @@ if os.path.exists(params_path):
     except Exception:
         pass
 
-# === NOVO: lê densidade (plantas/ha) e média histórica (sacas/ha) do JSON ===
 try:
     DENSIDADE_PLANTAS_HA = float(params.get("densidade_pes_ha", 625))
 except Exception:
-    DENSIDADE_PLANTAS_HA = 625.0  # fallback seguro
+    DENSIDADE_PLANTAS_HA = 625.0  
 
 try:
     MEDIA_ULTIMA_SAFRA_SC_HA = float(params.get("produtividade_media_sacas_ha", "nan"))
@@ -257,9 +233,6 @@ gdf_pts = gdf_pts.set_crs(4326) if gdf_pts.crs is None else gdf_pts.to_crs(4326)
 
 roi = geemap.gdf_to_ee(gdf_area[["geometry"]])
 
-# -------------------------------
-# Sidebar: parâmetros e mapa
-# -------------------------------
 st.sidebar.header("Parâmetros")
 bandas = TOKENS_IDX[:]
 
@@ -290,9 +263,6 @@ with st.sidebar:
     show_points = st.checkbox("Mostrar pontos", value=True)
     show_area   = st.checkbox("Mostrar polígono da área", value=True)
 
-# -------------------------------
-# GEE pipeline
-# -------------------------------
 def processar_colecao(start_date, end_date, roi, limite_nuvens):
     col = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
            .filterBounds(roi)
@@ -355,9 +325,6 @@ def extrair_dados_min_mean_max(colecao, gdf_pontos, nomes_indices, buffer_m):
             gdf_out[col] = gdf_pontos[col].values
     return gdf_out
 
-# -------------------------------
-# Modelo / features
-# -------------------------------
 def _load_model_bundle(path):
     obj = joblib.load(path)
     if isinstance(obj, dict):
@@ -413,26 +380,20 @@ def _maybe_scale_fit_transform(scaler, X_train, X_pred):
         scaler.fit(X_train.values)
         return scaler.transform(X_train.values), scaler.transform(X_pred.values)
 
-# -------------------------------
-# Mapa de variabilidade
-# -------------------------------
 def create_interactive_map(
     gdf_points, gdf_area, prod_column="produtividade_kg",
     method_key='spline', grid_res_m=5, cmap_name='YlGn',
     show_points=True, show_area=True
 ):
     """Cria mapa interativo com interpolação da produtividade"""
-
-    # Centro do mapa
+    
     centroid = gdf_area.geometry.unary_union.centroid
     start_loc = [centroid.y, centroid.x]
-
-    # Projeta para UTM (metros)
+    
     epsg_utm = get_local_utm_epsg(centroid.x, centroid.y)
     area_utm = gdf_area.to_crs(epsg=epsg_utm)
     pontos_utm = gdf_points.to_crs(epsg=epsg_utm)
-
-    # Bounds e grid
+    
     xmin, ymin, xmax, ymax = area_utm.total_bounds
     pad = grid_res_m * 2
     xmin, ymin, xmax, ymax = xmin - pad, ymin - pad, xmax + pad, ymax + pad
@@ -440,17 +401,14 @@ def create_interactive_map(
     xi = np.arange(xmin, xmax, grid_res_m)
     yi = np.arange(ymin, ymax, grid_res_m)
     xi_grid, yi_grid = np.meshgrid(xi, yi)
-
-    # Dados para interpolação
+    
     vals = pontos_utm[prod_column].astype(float).values
     xyz = np.c_[pontos_utm.geometry.x, pontos_utm.geometry.y, vals]
-
-    # Interpolação
+   
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         Z = METHODS[method_key]['function'](xyz, xi_grid, yi_grid)
-
-    # Máscara fora do polígono
+    
     poly = unary_union(area_utm.geometry)
     mask = np.zeros_like(Z, dtype=bool)
     px = xi_grid + (grid_res_m / 2.0)
@@ -460,8 +418,7 @@ def create_interactive_map(
         mask[i, :] = np.array([poly.contains(pt) for pt in pts])
 
     Z_masked = np.where(mask, Z, np.nan)
-
-    # Normalização/cores
+    
     vmin = np.nanpercentile(Z_masked, 2)
     vmax = np.nanpercentile(Z_masked, 98)
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
@@ -472,35 +429,30 @@ def create_interactive_map(
 
     rgba = cmap(norm(Z_masked))
     rgba[..., 3] = np.where(np.isnan(Z_masked), 0.0, 0.75)
-
-    # Salva PNG e embute em base64 (data URI)
+    
     tmp_png_path = "/tmp/interp_overlay.png"
     plt.imsave(tmp_png_path, rgba, format="png", origin="lower")
     with open(tmp_png_path, "rb") as f:
         data_url = "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
-
-    # Bounds para overlay (em lat/lon)
+    
     bb_ll = gpd.GeoSeries([Point(xmin, ymin)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
     bb_ur = gpd.GeoSeries([Point(xmax, ymax)], crs=f"EPSG:{epsg_utm}").to_crs(4326)[0]
     bounds = [[bb_ll.y, bb_ll.x], [bb_ur.y, bb_ur.x]]
-
-    # Mapa Folium
+    
     m = folium.Map(location=start_loc, zoom_start=15, tiles=None, control_scale=True)
     folium.TileLayer('OpenStreetMap', name='Mapa (ruas)', control=True).add_to(m)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri', name='Satélite', control=True
     ).add_to(m)
-
-    # Polígono da área
+    
     if show_area:
         folium.GeoJson(
             gdf_area[['geometry']].__geo_interface__,
             name="Área de Estudo",
             style_function=lambda x: {"color": "blue", "fillColor": "blue", "fillOpacity": 0.1, "weight": 2}
         ).add_to(m)
-
-    # Overlay da interpolação
+    
     overlay = folium.raster_layers.ImageOverlay(
         image=data_url,
         bounds=bounds,
@@ -510,8 +462,7 @@ def create_interactive_map(
         cross_origin=False
     )
     overlay.add_to(m)
-
-    # Pontos
+    
     if show_points:
         for _, row in gdf_points.iterrows():
             if row.geometry is not None:
@@ -561,12 +512,8 @@ def create_static_map(gdf_points, gdf_area, prod_column="produtividade_kg"):
     plt.tight_layout()
     return fig
 
-# -------------------------------
-# UI principal
-# -------------------------------
 process_btn = st.button("▶️ Processar dados")
 
-# Se já processou, renderiza resultados
 if st.session_state.processing_complete and st.session_state.processed_data:
     st.success("✅ Predição concluída e arquivos salvos!")
 
@@ -582,8 +529,7 @@ if st.session_state.processing_complete and st.session_state.processed_data:
         mime="text/csv"
     )
 
-    st.markdown("### 📌 Produtividade média prevista (safra)")
-    # Comparação com última safra, se existir
+    st.markdown("### 📌 Produtividade média prevista (safra)")    
     if np.isfinite(MEDIA_ULTIMA_SAFRA_SC_HA):
         delta_val = media_sc_ha - MEDIA_ULTIMA_SAFRA_SC_HA
         st.metric(
@@ -608,8 +554,7 @@ if st.session_state.processing_complete and st.session_state.processed_data:
             show_area=show_area
         )
         show_map_safely(interactive_map, key="main_map", height=600, width=1200)
-
-        # Legenda (colorbar)
+        
         st.sidebar.markdown("---")
         st.sidebar.subheader("Legenda - Produtividade (kg)")
         fig, ax = plt.subplots(figsize=(6, 0.4))
@@ -627,29 +572,23 @@ if st.session_state.processing_complete and st.session_state.processed_data:
         except Exception as e2:
             st.error(f"Erro também na visualização alternativa: {e2}")
 
-# Processamento ao clicar
 elif process_btn:
-    with st.spinner("Processando…"):
-        # Coleta GEE
+    with st.spinner("Processando…"):        
         col_train = processar_colecao(train_start, train_end, roi, cloud_train)
         col_pred  = processar_colecao(pred_start,  pred_end,  roi, cloud_pred)
-
-        # Extração min/mean/max nos pontos
+        
         gdf_train = extrair_dados_min_mean_max(col_train, gdf_pts, TOKENS_IDX, buffer_m)
         gdf_pred  = extrair_dados_min_mean_max(col_pred,  gdf_pts, TOKENS_IDX, buffer_m)
-
-        # Tipagem numérica
+        
         feats_all = [f"{b}_{stat}" for b in TOKENS_IDX for stat in ["min","mean","max"]]
         for df_ in (gdf_train, gdf_pred):
             for c in feats_all:
                 if c in df_.columns:
                     df_[c] = pd.to_numeric(df_[c], errors="coerce")
-
-        # Y de treino
+        
         if "maduro_kg" not in gdf_train.columns:
             st.error("❌ Coluna 'maduro_kg' não encontrada nos pontos para treinamento."); st.stop()
-
-        # Modelo
+        
         modelo, feats_bundle, scaler = _load_model_bundle(model_path)
         if modelo is None or not hasattr(modelo, "fit"):
             st.error("❌ Arquivo de modelo não contém um estimador válido."); st.stop()
@@ -667,26 +606,18 @@ elif process_btn:
         modelo.fit(X_train_mat, y)
         yhat = modelo.predict(X_pred_mat)
 
-        gdf_pred["produtividade_kg"] = yhat
-
-        # === AJUSTE SOLICITADO: conversão kg → sc/ha considerando que cada amostra representa 5 plantas ===
-        # Antes:
-        # gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (DENSIDADE_PLANTAS_HA / 60.0)
-        # Agora (divide por 5.0):
+        gdf_pred["produtividade_kg"] = yhat       
         gdf_pred["produtividade_sc/ha"] = gdf_pred["produtividade_kg"] * (DENSIDADE_PLANTAS_HA / 60.0) / 5.0
-
-        # Enriquecimento com lat/lon
+        
         if "latitude" not in gdf_pred.columns and "geometry" in gdf_pred.columns:
             gdf_pred["latitude"] = gdf_pred.geometry.y
         if "longitude" not in gdf_pred.columns and "geometry" in gdf_pred.columns:
             gdf_pred["longitude"] = gdf_pred.geometry.x
-
-        # Persistência
+        
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_csv = os.path.join(save_dir, f"predicao_sem_datas_{ts}.csv")
         gdf_pred.drop(columns=["geometry"], errors="ignore").to_csv(out_csv, index=False)
-
-        # Metadados (inclui densidade e média histórica para rastreabilidade)
+        
         meta = {
             "treino_inicio": str(train_start),
             "treino_fim": str(train_end),
@@ -705,15 +636,13 @@ elif process_btn:
         out_meta = os.path.join(save_dir, f"predicao_params_{ts}.json")
         with open(out_meta, "w") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
-
-        # Métrica de exibição
+       
         df_pred_csv = _read_csv_robusto(out_csv)
         if "produtividade_sc/ha" in df_pred_csv.columns:
             media_sc_ha = pd.to_numeric(df_pred_csv["produtividade_sc/ha"], errors="coerce").mean()
         else:
             media_sc_ha = 0.0
-
-        # Guarda em session state
+        
         st.session_state.processing_complete = True
         st.session_state.processed_data = {
             'gdf_pred': gdf_pred,
@@ -723,6 +652,5 @@ elif process_btn:
 
         st.rerun()
 
-# Mensagem inicial
 else:
-    st.info("👆 Configure os parâmetros no sidebar e clique em **Processar dados** para iniciar a previsão da safra.")
+    st.info("👆 Configure os parâmetros e clique em **Processar dados** para prever a safra.")
