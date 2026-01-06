@@ -2,7 +2,7 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="☕ SAFRA DO CAFÉ | Sistema para Cafeicultura de Precisão",
+    page_title="☕ Safra do Café | Sistema para Cafeicultura de Precisão",
     page_icon="☕",
     layout="wide"
 )
